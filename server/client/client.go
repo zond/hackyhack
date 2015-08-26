@@ -12,7 +12,7 @@ import (
 )
 
 type Handler interface {
-	Handle(string) error
+	HandleClientInput(string) error
 }
 
 type Client struct {
@@ -49,7 +49,7 @@ func (c *Client) Handle(conn net.Conn) error {
 	line, err := c.reader.ReadString('\n')
 	for ; err == nil; line, err = c.reader.ReadString('\n') {
 		line = strings.TrimSpace(line)
-		if err := c.handler.Handle(line); err != nil {
+		if err := c.handler.HandleClientInput(line); err != nil {
 			return err
 		}
 	}

@@ -55,13 +55,15 @@ type Response struct {
 }
 
 type Construct struct {
-	RequestId  string
-	ResourceId string
+	RequestId   string
+	ResourceId  string
+	Constructed bool
 }
 
 type Destruct struct {
 	RequestId  string
 	ResourceId string
+	Destroyed  bool
 }
 
 type Blob struct {

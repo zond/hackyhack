@@ -8,11 +8,38 @@ import (
 	"reflect"
 	"sync"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/zond/hackyhack/proc/errors"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/messages"
 )
+
+func setrlimit(i int, r *syscall.Rlimit) {
+	if err := syscall.Setrlimit(i, r); err != nil {
+		panic(err)
+	}
+}
+
+const (
+	RLIMIT_AS     = 1 << 22
+	RLIMIT_CORE   = 0
+	RLIMIT_CPU    = 1
+	RLIMIT_DATA   = 1 << 22
+	RLIMIT_FSIZE  = 0
+	RLIMIT_NOFILE = 3
+	RLIMIT_STACK  = 1 << 23
+)
+
+func init() {
+	setrlimit(syscall.RLIMIT_AS, &syscall.Rlimit{RLIMIT_AS, RLIMIT_AS})
+	setrlimit(syscall.RLIMIT_CORE, &syscall.Rlimit{RLIMIT_CORE, RLIMIT_CORE})
+	setrlimit(syscall.RLIMIT_CPU, &syscall.Rlimit{RLIMIT_CPU, RLIMIT_CPU})
+	setrlimit(syscall.RLIMIT_DATA, &syscall.Rlimit{RLIMIT_DATA, RLIMIT_DATA})
+	setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{RLIMIT_FSIZE, RLIMIT_FSIZE})
+	setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{RLIMIT_NOFILE, RLIMIT_NOFILE})
+	setrlimit(syscall.RLIMIT_STACK, &syscall.Rlimit{RLIMIT_STACK, RLIMIT_STACK})
+}
 
 var (
 	driver        *slaveDriver
@@ -31,52 +58,42 @@ func (m *mcp) GetResourceId() string {
 
 func (m *mcp) GetContainer() string {
 	result := ""
-	m.driver.emitRequest(&messages.Request{
-		Header: messages.RequestHeader{
-			RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
-			ResourceId: messages.ResourceSelf,
-			Method:     messages.MethodGetContainer,
-		},
-	}, &result)
+	m.driver.emitRequest(m.resourceId, messages.ResourceSelf, messages.MethodGetContent, nil, &result)
 	return result
 }
 
 func (m *mcp) GetContent() []string {
 	result := []string{}
-	m.driver.emitRequest(&messages.Request{
-		Header: messages.RequestHeader{
-			RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
-			ResourceId: messages.ResourceSelf,
-			Method:     messages.MethodGetContent,
-		},
-	}, &result)
+	m.driver.emitRequest(m.resourceId, messages.ResourceSelf, messages.MethodGetContent, nil, &result)
 	return result
 }
 
 type flyingRequest struct {
-	waitGroup sync.WaitGroup
-	response  *messages.Response
+	waitGroup  sync.WaitGroup
+	response   *messages.Response
+	resourceId string
 }
 
 type slaveDriver struct {
 	encoder            *json.Encoder
 	generator          SlaveGenerator
-	slaves             map[string]interfaces.Named
+	slaves             map[string]interfaces.Describable
 	slaveLock          sync.RWMutex
 	emitLock           sync.Mutex
 	flyingRequests     map[string]*flyingRequest
 	flyingRequestsLock sync.Mutex
 }
 
-type SlaveGenerator func(interfaces.MCP) interfaces.Named
+type SlaveGenerator func(interfaces.MCP) interfaces.Describable
 
 func newDriver(gen SlaveGenerator) *slaveDriver {
-	return &slaveDriver{
+	driver := &slaveDriver{
 		encoder:        json.NewEncoder(os.Stdout),
-		slaves:         map[string]interfaces.Named{},
+		slaves:         map[string]interfaces.Describable{},
 		generator:      gen,
 		flyingRequests: map[string]*flyingRequest{},
 	}
+	return driver
 }
 
 func Register(gen SlaveGenerator) {
@@ -167,8 +184,33 @@ func (s *slaveDriver) handleRequest(request *messages.Request) {
 	})
 }
 
-func (s *slaveDriver) emitRequest(request *messages.Request, result interface{}) {
-	flying := &flyingRequest{}
+func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, params, result interface{}) {
+	s.slaveLock.RLock()
+	_, found := s.slaves[srcResourceId]
+	s.slaveLock.RUnlock()
+	if !found {
+		log.Fatal(fmt.Errorf("Unregistered resource id %q", srcResourceId))
+	}
+
+	request := &messages.Request{
+		Header: messages.RequestHeader{
+			RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
+			ResourceId: dstResourceId,
+			Method:     method,
+		},
+	}
+
+	if params != nil {
+		paramBytes, err := json.Marshal(params)
+		if err != nil {
+			log.Fatal(err)
+		}
+		request.Parameters = string(paramBytes)
+	}
+
+	flying := &flyingRequest{
+		resourceId: srcResourceId,
+	}
 	flying.waitGroup.Add(1)
 	s.flyingRequestsLock.Lock()
 	s.flyingRequests[request.Header.RequestId] = flying
@@ -221,6 +263,27 @@ func (s *slaveDriver) emit(blob *messages.Blob) {
 	}
 }
 
+func (s *slaveDriver) destruct(d *messages.Destruct) {
+	s.slaveLock.Lock()
+	slave, found := s.slaves[d.ResourceId]
+	if found {
+		if destructible, ok := slave.(interfaces.Destructible); ok {
+			go destructible.Destroy()
+		}
+		d.Destroyed = true
+	}
+	delete(s.slaves, d.ResourceId)
+	s.slaveLock.Unlock()
+
+	s.flyingRequestsLock.Lock()
+	for requestId, flying := range s.flyingRequests {
+		if flying.resourceId == d.ResourceId {
+			delete(s.flyingRequests, requestId)
+		}
+	}
+	s.flyingRequestsLock.Unlock()
+}
+
 func (s *slaveDriver) construct(c *messages.Construct) {
 	s.slaveLock.Lock()
 	_, found := s.slaves[c.ResourceId]
@@ -229,6 +292,7 @@ func (s *slaveDriver) construct(c *messages.Construct) {
 			driver:     s,
 			resourceId: c.ResourceId,
 		})
+		c.Constructed = true
 	}
 	s.slaveLock.Unlock()
 
@@ -252,6 +316,8 @@ func (s *slaveDriver) loop() {
 			go s.construct(blob.Construct)
 		case messages.BlobTypeResponse:
 			go s.handleResponse(blob.Response)
+		case messages.BlobTypeDestruct:
+			go s.destruct(blob.Destruct)
 		default:
 			log.Fatal(errors.ErrUnknownBlobType)
 		}

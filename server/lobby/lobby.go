@@ -90,7 +90,7 @@ func New(p persist.Persister, c Client) *Lobby {
 
 var loginReg = regexp.MustCompile("^login (\\w+) (\\w+)$")
 
-func (l *Lobby) Handle(s string) error {
+func (l *Lobby) HandleClientInput(s string) error {
 	switch l.state {
 	case createUser:
 		switch strings.ToLower(s) {

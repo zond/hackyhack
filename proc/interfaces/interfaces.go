@@ -1,7 +1,11 @@
 package interfaces
 
-type Named interface {
-	GetName() string
+type Describable interface {
+	GetShortDesc() string
+}
+
+type Destructible interface {
+	Destroy()
 }
 
 type MCP interface {
