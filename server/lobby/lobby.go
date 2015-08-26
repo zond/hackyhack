@@ -14,24 +14,26 @@ const (
 package main
 
 import (
-	"log"
-
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/slave"
 )
 
-type handler struct {}
-
-func new(m interfaces.MCP) &handler {
-	return &handler{}
+type handler struct {
+	mcp interfaces.MCP
 }
 
-func (h *handler) Name() string {
+func new(m interfaces.MCP) interfaces.Named {
+	return &handler{
+		mcp: m,
+	}
+}
+
+func (h *handler) GetName() string {
 	return "anonymous"
 }
 
 func main() {
-	log.Fatal(proc.Register(new))
+	slave.Register(new)
 }
 `
 )
