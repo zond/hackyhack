@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"sync/atomic"
 
 	"github.com/zond/hackyhack/proc/errors"
 	"github.com/zond/hackyhack/proc/interfaces"
@@ -14,8 +15,9 @@ import (
 )
 
 var (
-	driver       *slaveDriver
-	registerOnce sync.Once
+	driver        *slaveDriver
+	registerOnce  sync.Once
+	nextRequestId uint64 = 0
 )
 
 type mcp struct {
@@ -27,29 +29,53 @@ func (m *mcp) GetResourceId() string {
 	return m.resourceId
 }
 
-func (m *mcp) GetContainer() interfaces.Container {
-	return nil
+func (m *mcp) GetContainer() string {
+	result := ""
+	m.driver.emitRequest(&messages.Request{
+		Header: messages.RequestHeader{
+			RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
+			ResourceId: messages.ResourceSelf,
+			Method:     messages.MethodGetContainer,
+		},
+	}, &result)
+	return result
 }
 
-func (m *mcp) GetContent() interfaces.Nameds {
-	return nil
+func (m *mcp) GetContent() []string {
+	result := []string{}
+	m.driver.emitRequest(&messages.Request{
+		Header: messages.RequestHeader{
+			RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
+			ResourceId: messages.ResourceSelf,
+			Method:     messages.MethodGetContent,
+		},
+	}, &result)
+	return result
+}
+
+type flyingRequest struct {
+	waitGroup sync.WaitGroup
+	response  *messages.Response
 }
 
 type slaveDriver struct {
-	encoder   *json.Encoder
-	generator SlaveGenerator
-	slaves    map[string]interfaces.Named
-	slaveLock sync.RWMutex
-	emitLock  sync.Mutex
+	encoder            *json.Encoder
+	generator          SlaveGenerator
+	slaves             map[string]interfaces.Named
+	slaveLock          sync.RWMutex
+	emitLock           sync.Mutex
+	flyingRequests     map[string]*flyingRequest
+	flyingRequestsLock sync.Mutex
 }
 
 type SlaveGenerator func(interfaces.MCP) interfaces.Named
 
 func newDriver(gen SlaveGenerator) *slaveDriver {
 	return &slaveDriver{
-		encoder:   json.NewEncoder(os.Stdout),
-		slaves:    map[string]interfaces.Named{},
-		generator: gen,
+		encoder:        json.NewEncoder(os.Stdout),
+		slaves:         map[string]interfaces.Named{},
+		generator:      gen,
+		flyingRequests: map[string]*flyingRequest{},
 	}
 }
 
@@ -141,6 +167,40 @@ func (s *slaveDriver) handleRequest(request *messages.Request) {
 	})
 }
 
+func (s *slaveDriver) emitRequest(request *messages.Request, result interface{}) {
+	flying := &flyingRequest{}
+	flying.waitGroup.Add(1)
+	s.flyingRequestsLock.Lock()
+	s.flyingRequests[request.Header.RequestId] = flying
+	s.flyingRequestsLock.Unlock()
+
+	s.emit(&messages.Blob{
+		Type:    messages.BlobTypeRequest,
+		Request: request,
+	})
+
+	flying.waitGroup.Wait()
+
+	if err := json.Unmarshal([]byte(flying.response.Result), result); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (s *slaveDriver) handleResponse(response *messages.Response) {
+	if response.Header.Error != nil {
+		log.Fatal(fmt.Errorf("%v: %v", response.Header.Error.Message, response.Header.Error.Code))
+	}
+
+	s.flyingRequestsLock.Lock()
+	flying, found := s.flyingRequests[response.Header.RequestId]
+	delete(s.flyingRequests, response.Header.RequestId)
+	s.flyingRequestsLock.Unlock()
+	if found {
+		flying.response = response
+		flying.waitGroup.Done()
+	}
+}
+
 func (s *slaveDriver) emitError(request *messages.Request, err *messages.Error) {
 	s.emit(&messages.Blob{
 		Type: messages.BlobTypeResponse,
@@ -187,10 +247,11 @@ func (s *slaveDriver) loop() {
 		}
 		switch blob.Type {
 		case messages.BlobTypeRequest:
-			s.handleRequest(blob.Request)
+			go s.handleRequest(blob.Request)
 		case messages.BlobTypeConstruct:
-			s.construct(blob.Construct)
+			go s.construct(blob.Construct)
 		case messages.BlobTypeResponse:
+			go s.handleResponse(blob.Response)
 		default:
 			log.Fatal(errors.ErrUnknownBlobType)
 		}

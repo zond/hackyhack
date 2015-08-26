@@ -1,17 +1,11 @@
 package interfaces
 
 type Named interface {
-	Name() string
-}
-
-type Nameds []Named
-
-type Container interface {
-	Content() Nameds
+	GetName() string
 }
 
 type MCP interface {
 	GetResourceId() string
-	GetContainer() Container
-	GetContent() Nameds
+	GetContainer() string
+	GetContent() []string
 }

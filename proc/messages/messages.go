@@ -1,5 +1,14 @@
 package messages
 
+const (
+	ResourceSelf = "self"
+)
+
+const (
+	MethodGetContainer = "GetContainer"
+	MethodGetContent   = "GetContent"
+)
+
 type BlobType int
 
 const (
