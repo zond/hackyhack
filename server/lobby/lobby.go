@@ -5,7 +5,35 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/zond/gosafe"
 	"github.com/zond/hackyhack/server/persist"
+)
+
+const (
+	initialHandler = `
+package main
+
+import (
+	"log"
+
+	"github.com/zond/hackyhack/proc/interfaces"
+	"github.com/zond/hackyhack/proc/slave"
+)
+
+type handler struct {}
+
+func new(m interfaces.MCP) &handler {
+	return &handler{}
+}
+
+func (h *handler) Name() string {
+	return "anonymous"
+}
+
+func main() {
+	log.Fatal(proc.Register(new))
+}
+`
 )
 
 type Client interface {
@@ -25,18 +53,37 @@ type user struct {
 	password string
 }
 
+type gosafeHandler struct {
+	cmd *gosafe.Cmd
+}
+
+func (h *gosafeHandler) Input(s string) error {
+	result, err := h.cmd.Call("input", s)
+	if err != nil {
+		return err
+	}
+	if result != nil {
+		return result.(error)
+	}
+	return nil
+}
+
 type Lobby struct {
 	client    Client
 	persister persist.Persister
 	state     state
 	user      user
+	compiler  *gosafe.Compiler
 }
 
 func New(p persist.Persister, c Client) *Lobby {
-	return &Lobby{
+	lobby := &Lobby{
 		client:    c,
 		persister: p,
+		compiler:  gosafe.NewCompiler(),
 	}
+	lobby.compiler.Allow("github.com/zond/gosafe/child")
+	return lobby
 }
 
 var loginReg = regexp.MustCompile("^login (\\w+) (\\w+)$")
@@ -47,6 +94,9 @@ func (l *Lobby) Handle(s string) error {
 		switch strings.ToLower(s) {
 		case "y":
 			if err := l.persister.Set(l.user.password, "users", l.user.username, "password"); err != nil {
+				return err
+			}
+			if err := l.persister.Set(initialHandler, "users", l.user.username, "handler"); err != nil {
 				return err
 			}
 			return l.client.Authorize(l.user.username)

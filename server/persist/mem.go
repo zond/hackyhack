@@ -1,59 +1,42 @@
 package persist
 
-import (
-	"sync"
+type Mem map[string]interface{}
 
-	"github.com/davecgh/go-spew/spew"
-)
-
-type Mem struct {
-	node node
-	lock sync.RWMutex
+func NewMem() Mem {
+	return Mem{}
 }
 
-func NewMem() *Mem {
-	return &Mem{}
-}
-
-func (m *Mem) Set(val string, keys ...string) error {
-	defer spew.Dump(m)
-	return m.node.set(val, keys...)
-}
-
-func (m *Mem) Get(keys ...string) (string, error) {
-	return m.node.get(keys...)
-}
-
-type node struct {
-	val *string
-	m   map[string]node
-}
-
-func (n *node) set(val string, keys ...string) error {
-	if len(keys) == 0 {
-		n.val = &val
+func (m Mem) Set(val string, keys ...string) error {
+	if len(keys) == 1 {
+		m[keys[0]] = val
 		return nil
 	}
-	if n.m == nil {
-		n.m = map[string]node{}
+	current, found := m[keys[0]]
+	currentM, ok := current.(Mem)
+	if found && ok {
+		currentM.Set(val, keys[1:]...)
+		return nil
 	}
-	next := n.m[keys[0]]
-	defer func() {
-		n.m[keys[0]] = next
-	}()
-	return next.set(val, keys[1:]...)
+	currentM = Mem{}
+	m[keys[0]] = currentM
+	return currentM.Set(val, keys[1:]...)
 }
 
-func (n *node) get(keys ...string) (string, error) {
-	if len(keys) == 0 {
-		if n.val == nil {
-			return "", ErrNotFound
-		}
-		return *n.val, nil
-	}
-	if n.m == nil {
+func (m Mem) Get(keys ...string) (string, error) {
+	value, found := m[keys[0]]
+	if !found {
 		return "", ErrNotFound
 	}
-	next := n.m[keys[0]]
-	return next.get(keys[1:]...)
+	if len(keys) == 1 {
+		valueS, ok := value.(string)
+		if !ok {
+			return "", ErrNotFound
+		}
+		return valueS, nil
+	}
+	valueM, ok := value.(Mem)
+	if !ok {
+		return "", ErrNotFound
+	}
+	return valueM.Get(keys[1:]...)
 }
