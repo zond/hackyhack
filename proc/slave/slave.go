@@ -5,15 +5,19 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"syscall"
 
+	"github.com/zond/hackyhack/proc"
 	"github.com/zond/hackyhack/proc/errors"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/messages"
 )
+
+func Sprintf(f string, i ...interface{}) string {
+	return fmt.Sprintf(f, i...)
+}
 
 func setrlimit(i int, r *syscall.Rlimit) {
 	if err := syscall.Setrlimit(i, r); err != nil {
@@ -44,12 +48,16 @@ func init() {
 var (
 	driver        *slaveDriver
 	registerOnce  sync.Once
-	nextRequestId uint64 = 0
+	nextRequestId uint64
 )
 
 type mcp struct {
 	driver     *slaveDriver
 	resourceId string
+}
+
+func (m *mcp) Log(s string) {
+	fmt.Fprintln(os.Stderr, s)
 }
 
 func (m *mcp) GetResourceId() string {
@@ -103,85 +111,24 @@ func Register(gen SlaveGenerator) {
 	driver.loop()
 }
 
+func (s *slaveDriver) logErr(err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+}
+
 func (s *slaveDriver) handleRequest(request *messages.Request) {
 	s.slaveLock.RLock()
 	slave, found := s.slaves[request.Header.ResourceId]
 	s.slaveLock.RUnlock()
 	if !found {
-		s.emitError(request, &messages.Error{
+		s.logErr(proc.Emitter(s.emit).Error(request, &messages.Error{
 			Message: fmt.Sprintf("No resource %q found.", request.Header.ResourceId),
 			Code:    messages.ErrorCodeNoSuchResource,
-		})
-		return
-	}
-	slaveVal := reflect.ValueOf(slave)
-
-	m := slaveVal.MethodByName(request.Header.Method)
-	if !m.IsValid() {
-		s.emitError(request, &messages.Error{
-			Message: fmt.Sprintf("No method %q found.", request.Header.Method),
-			Code:    messages.ErrorCodeNoSuchMethod,
-		})
-		return
+		}))
 	}
 
-	mt := m.Type()
-	params := make([]interface{}, mt.NumIn())
-	paramVals := make([]reflect.Value, len(params))
-
-	if len(params) > 0 {
-		if err := json.Unmarshal([]byte(request.Parameters), &params); err != nil {
-			s.emitError(request, &messages.Error{
-				Message: err.Error(),
-				Code:    messages.ErrorCodeJSONDecodeParameters,
-			})
-			return
-		}
-
-		for index := range params {
-			rawJSON, err := json.Marshal(params[index])
-			if err != nil {
-				s.emitError(request, &messages.Error{
-					Message: err.Error(),
-					Code:    messages.ErrorCodeJSONDecodeParameters,
-				})
-			}
-
-			val := reflect.New(mt.In(index))
-			if err := json.Unmarshal(rawJSON, val.Interface()); err != nil {
-				s.emitError(request, &messages.Error{
-					Message: err.Error(),
-					Code:    messages.ErrorCodeJSONDecodeParameters,
-				})
-			}
-			paramVals[index] = val.Elem()
-		}
-	}
-
-	resultVals := m.Call(paramVals)
-	result := make([]interface{}, len(resultVals))
-	for index := range result {
-		result[index] = resultVals[index].Interface()
-	}
-
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		s.emitError(request, &messages.Error{
-			Message: err.Error(),
-			Code:    messages.ErrorCodeJSONEncodeResult,
-		})
-		return
-	}
-
-	s.emit(&messages.Blob{
-		Type: messages.BlobTypeResponse,
-		Response: &messages.Response{
-			Header: messages.ResponseHeader{
-				RequestId: request.Header.RequestId,
-			},
-			Result: string(resultBytes),
-		},
-	})
+	s.logErr(proc.HandleRequest(s.emit, slave, request))
 }
 
 func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, params, result interface{}) {
@@ -243,24 +190,13 @@ func (s *slaveDriver) handleResponse(response *messages.Response) {
 	}
 }
 
-func (s *slaveDriver) emitError(request *messages.Request, err *messages.Error) {
-	s.emit(&messages.Blob{
-		Type: messages.BlobTypeResponse,
-		Response: &messages.Response{
-			Header: messages.ResponseHeader{
-				RequestId: request.Header.RequestId,
-				Error:     err,
-			},
-		},
-	})
-}
-
-func (s *slaveDriver) emit(blob *messages.Blob) {
+func (s *slaveDriver) emit(blob *messages.Blob) error {
 	s.emitLock.Lock()
 	defer s.emitLock.Unlock()
 	if err := s.encoder.Encode(blob); err != nil {
 		log.Fatal(err)
 	}
+	return nil
 }
 
 func (s *slaveDriver) destruct(d *messages.Destruct) {
