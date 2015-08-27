@@ -42,10 +42,10 @@ type MCP struct {
 	stderrHandler     func([]byte)
 	errHandler        func(error)
 	debugHandler      proc.Outputter
-	host              interface{}
+	resourceFinder    proc.ResourceFinder
 }
 
-func New(code string) (*MCP, error) {
+func New(code string, resourceFinder proc.ResourceFinder) (*MCP, error) {
 	h := sha1.New()
 	if _, err := h.Write([]byte(code)); err != nil {
 		return nil, err
@@ -64,6 +64,7 @@ func New(code string) (*MCP, error) {
 		errHandler: func(err error) {
 			log.Print(err)
 		},
+		resourceFinder: resourceFinder,
 	}
 	return mcp, nil
 }
@@ -279,7 +280,7 @@ func (m *MCP) restart(proc *os.Process) {
 }
 
 func (m *MCP) handleRequest(request *messages.Request) {
-	if err := proc.HandleRequest(m.emit, m.host, request); err != nil {
+	if err := proc.HandleRequest(m.emit, m.resourceFinder, request); err != nil {
 		if err := m.cleanup(); err != nil {
 			log.Fatal(err)
 		}
@@ -354,8 +355,7 @@ func (m *MCP) loopStderr(r io.ReadCloser) {
 	}
 }
 
-func (m *MCP) Start(host interface{}) error {
-	m.host = host
+func (m *MCP) Start() error {
 	if err := m.cleanup(); err != nil {
 		return err
 	}

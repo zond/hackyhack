@@ -33,10 +33,19 @@ func (e Emitter) Error(request *messages.Request, err *messages.Error) error {
 	})
 }
 
-func HandleRequest(emitter Emitter, slave interface{}, request *messages.Request) error {
-	slaveVal := reflect.ValueOf(slave)
+type ResourceFinder func(resourceId string) (interface{}, error)
 
-	m := slaveVal.MethodByName(request.Header.Method)
+func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *messages.Request) error {
+	resource, err := resourceFinder(request.Header.ResourceId)
+	if err != nil {
+		return emitter.Error(request, &messages.Error{
+			Message: err.Error(),
+			Code:    messages.ErrorCodeNoSuchResource,
+		})
+	}
+	resourceVal := reflect.ValueOf(resource)
+
+	m := resourceVal.MethodByName(request.Header.Method)
 	if !m.IsValid() {
 		return emitter.Error(request, &messages.Error{
 			Message: fmt.Sprintf("No method %q found.", request.Header.Method),

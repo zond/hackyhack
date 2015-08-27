@@ -117,18 +117,18 @@ func (s *slaveDriver) logErr(err error) {
 	}
 }
 
-func (s *slaveDriver) handleRequest(request *messages.Request) {
+func (s *slaveDriver) findSlave(resourceId string) (interface{}, error) {
 	s.slaveLock.RLock()
-	slave, found := s.slaves[request.Header.ResourceId]
+	slave, found := s.slaves[resourceId]
 	s.slaveLock.RUnlock()
 	if !found {
-		s.logErr(proc.Emitter(s.emit).Error(request, &messages.Error{
-			Message: fmt.Sprintf("No resource %q found.", request.Header.ResourceId),
-			Code:    messages.ErrorCodeNoSuchResource,
-		}))
+		return nil, fmt.Errorf("No slave %q found", resourceId)
 	}
+	return slave, nil
+}
 
-	s.logErr(proc.HandleRequest(s.emit, slave, request))
+func (s *slaveDriver) handleRequest(request *messages.Request) {
+	s.logErr(proc.HandleRequest(s.emit, s.findSlave, request))
 }
 
 func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, params, result interface{}) {
