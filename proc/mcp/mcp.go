@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -43,6 +44,7 @@ type MCP struct {
 	errHandler        func(error)
 	debugHandler      proc.Outputter
 	resourceFinder    proc.ResourceFinder
+	stopped           int32
 }
 
 func New(code string, resourceFinder proc.ResourceFinder) (*MCP, error) {
@@ -272,6 +274,10 @@ func (m *MCP) restart(proc *os.Process) {
 	}
 	m.debugHandler("MCP#restart\tchild cleaned")
 
+	if atomic.LoadInt32(&m.stopped) == 1 {
+		return
+	}
+
 	if err := m.startProc(); err != nil {
 		m.errHandler(err)
 		return
@@ -285,6 +291,13 @@ func (m *MCP) handleRequest(request *messages.Request) {
 			log.Fatal(err)
 		}
 	}
+}
+
+func (m *MCP) Stop() error {
+	if atomic.CompareAndSwapInt32(&m.stopped, 0, 1) {
+		return m.cleanup()
+	}
+	return nil
 }
 
 func (m *MCP) constructDone(c *messages.Construct) {
@@ -356,6 +369,9 @@ func (m *MCP) loopStderr(r io.ReadCloser) {
 }
 
 func (m *MCP) Start() error {
+	if atomic.LoadInt32(&m.stopped) == 1 {
+		return errors.New("Already stopped")
+	}
 	if err := m.cleanup(); err != nil {
 		return err
 	}
