@@ -8,8 +8,8 @@ import (
 )
 
 var allowedImports = map[string]bool{
-	"github.com/zond/hackyhack/proc/interfaces": true,
-	"github.com/zond/hackyhack/proc/slave":      true,
+	"\"github.com/zond/hackyhack/proc/interfaces\"": true,
+	"\"github.com/zond/hackyhack/proc/slave\"":      true,
 }
 
 type validator struct {

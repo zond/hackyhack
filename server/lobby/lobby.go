@@ -2,6 +2,10 @@ package lobby
 
 import (
 	"crypto/hmac"
+	"io/ioutil"
+	"log"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -9,34 +13,16 @@ import (
 	"github.com/zond/hackyhack/server/persist"
 )
 
-const (
-	initialHandler = `
-package main
+var initialHandler string
 
-import (
-	"github.com/zond/hackyhack/proc/interfaces"
-	"github.com/zond/hackyhack/proc/slave"
-)
-
-type handler struct {
-	mcp interfaces.MCP
-}
-
-func new(m interfaces.MCP) interfaces.Named {
-	return &handler{
-		mcp: m,
+func init() {
+	path := filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "zond", "hackyhack", "server", "lobby", "default", "handler.go")
+	b, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Fatalf("Unable to load default handler file %q: %v", path, err)
 	}
+	initialHandler = string(b)
 }
-
-func (h *handler) GetName() string {
-	return "anonymous"
-}
-
-func main() {
-	slave.Register(new)
-}
-`
-)
 
 type Client interface {
 	Send(string) error

@@ -248,7 +248,7 @@ func (m *MCP) startProc() error {
 	if err := m.child.Start(); err != nil {
 		return err
 	}
-	m.debugHandler("MCP#startProc\tstarted %v", m.child.Process.Pid)
+	m.debugHandler("MCP#startProc\tstarted pid %v", m.child.Process.Pid)
 
 	go m.restart(m.child.Process)
 	go m.loopStdout(decoder)
