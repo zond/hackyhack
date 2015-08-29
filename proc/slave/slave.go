@@ -53,6 +53,18 @@ type mcp struct {
 	resourceId string
 }
 
+func (m *mcp) Call(resourceId, method string, params, results interface{}) error {
+	return m.driver.emitRequest(m.resourceId, resourceId, method, params, results)
+}
+
+func (m *mcp) Fatal(i ...interface{}) {
+	log.Fatal(i...)
+}
+
+func (m *mcp) Fatalf(f string, i ...interface{}) {
+	log.Fatalf(f, i...)
+}
+
 func (m *mcp) Logf(f string, i ...interface{}) {
 	fmt.Fprintf(os.Stderr, f, i...)
 }
@@ -67,17 +79,23 @@ func (m *mcp) GetResourceId() string {
 
 func (m *mcp) GetContainer() string {
 	result := ""
-	m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContainer, nil, &result)
+	if err := m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContainer, nil, &result); err != nil {
+		log.Fatal(err)
+	}
 	return result
 }
 
 func (m *mcp) SendToClient(s string) {
-	m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodSendToClient, []string{s}, nil)
+	if err := m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodSendToClient, []string{s}, nil); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (m *mcp) GetContent() []string {
 	result := []string{}
-	m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContent, nil, &result)
+	if err := m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContent, nil, &result); err != nil {
+		log.Fatal(err)
+	}
 	return result
 }
 
@@ -137,7 +155,7 @@ func (s *slaveDriver) handleRequest(request *messages.Request) {
 	s.logErr(proc.HandleRequest(s.emit, s.findSlave, request))
 }
 
-func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, params, result interface{}) {
+func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, params, result interface{}) error {
 	s.slaveLock.RLock()
 	_, found := s.slaves[srcResourceId]
 	s.slaveLock.RUnlock()
@@ -181,6 +199,12 @@ func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, p
 			log.Fatal(err)
 		}
 	}
+
+	if herr := flying.response.Header.Error; herr != nil {
+		return herr
+	}
+
+	return nil
 }
 
 func (s *slaveDriver) handleResponse(response *messages.Response) {

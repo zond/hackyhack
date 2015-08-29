@@ -1,7 +1,7 @@
 package interfaces
 
 type Describable interface {
-	GetShortDesc() string
+	GetShortDesc(viewerId string) string
 }
 
 type Destructible interface {
@@ -11,8 +11,11 @@ type Destructible interface {
 type MCP interface {
 	Logf(string, ...interface{})
 	Log(...interface{})
+	Fatal(...interface{})
+	Fatalf(string, ...interface{})
 	SendToClient(string)
 	GetResourceId() string
 	GetContainer() string
 	GetContent() []string
+	Call(resourceId, method string, params, results interface{}) error
 }

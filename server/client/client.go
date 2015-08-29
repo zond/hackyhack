@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strings"
 
@@ -40,6 +41,7 @@ func (c *Client) Send(s string) error {
 type mcpHandler struct {
 	m          *mcp.MCP
 	client     *Client
+	username   string
 	resourceId string
 }
 
@@ -49,28 +51,43 @@ func (m *mcpHandler) HandleClientInput(s string) error {
 
 func (m *mcpHandler) resourceFinder(resourceId string) (interface{}, error) {
 	if resourceId == m.resourceId {
-		return &selfObject{client: m.client}, nil
+		return &selfObject{
+			h: m,
+		}, nil
 	}
 	return nil, nil
 }
 
 type selfObject struct {
-	client *Client
+	h *mcpHandler
 }
 
 func (s *selfObject) SendToClient(msg string) {
-	if err := s.client.Send(msg); err != nil {
-		s.client.conn.Close()
+	if err := s.h.client.Send(msg); err != nil {
+		s.h.client.conn.Close()
 	}
+}
+
+func (s *selfObject) GetContainer() string {
+	containerId, err := s.h.client.persister.Get("resources", s.h.resourceId, "container")
+	if err == persist.ErrNotFound {
+		return ""
+	} else if err != nil {
+		if err := s.h.m.Stop(); err != nil {
+			log.Fatal(err)
+		}
+	}
+	return containerId
 }
 
 func (c *Client) Authorize(username, resourceId string) error {
 	handler := &mcpHandler{
 		client:     c,
+		username:   username,
 		resourceId: resourceId,
 	}
 	var err error
-	if handler.m, err = c.router.MCP(handler.resourceFinder, "users", username, "handler"); err != nil {
+	if handler.m, err = c.router.MCP(handler.resourceFinder, "resources", resourceId, "handler"); err != nil {
 		return err
 	}
 	if _, err = handler.m.Construct(resourceId); err != nil {

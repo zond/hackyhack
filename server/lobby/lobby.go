@@ -88,11 +88,11 @@ func (l *Lobby) HandleClientInput(s string) error {
 			if err := l.persister.Set(l.user.password, "users", l.user.username, "password"); err != nil {
 				return err
 			}
-			if err := l.persister.Set(initialHandler, "users", l.user.username, "handler"); err != nil {
-				return err
-			}
 			resourceId := fmt.Sprintf("%x%x", rand.Int63(), rand.Int63())
 			if err := l.persister.Set(resourceId, "users", l.user.username, "resourceId"); err != nil {
+				return err
+			}
+			if err := l.persister.Set(initialHandler, "resources", resourceId, "handler"); err != nil {
 				return err
 			}
 			return l.client.Authorize(l.user.username, resourceId)

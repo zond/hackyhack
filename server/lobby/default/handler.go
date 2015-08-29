@@ -2,18 +2,11 @@ package main
 
 import (
 	"github.com/zond/hackyhack/client/commands"
+	"github.com/zond/hackyhack/client/util"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/slave"
 	"github.com/zond/hackyhack/proc/slave/delegator"
 )
-
-type commandList struct {
-	h *handler
-}
-
-func (c *commandList) L() {
-	c.h.m.SendToClient("Darkness!\n")
-}
 
 type handler struct {
 	m  interfaces.MCP
@@ -24,14 +17,14 @@ func New(m interfaces.MCP) interfaces.Describable {
 	h := &handler{
 		m: m,
 	}
-	h.ch = delegator.New(&commandList{
-		h: h,
+	h.ch = delegator.New(&commands.Default{
+		M: m,
 	})
 	return h
 }
 
 func (h *handler) HandleClientInput(s string) {
-	parts := commands.SplitWhitespace(s)
+	parts := util.SplitWhitespace(s)
 	if len(parts) == 0 {
 		return
 	}
@@ -41,15 +34,15 @@ func (h *handler) HandleClientInput(s string) {
 		params = parts[1:]
 	}
 
-	cmd := commands.Capitalize(parts[0])
+	cmd := util.Capitalize(parts[0])
 
 	err := h.ch.Call(cmd, params, nil)
 	if err != nil {
-		h.m.SendToClient(commands.Sprintf("Calling %q: %v\n", cmd, err.Error()))
+		h.m.SendToClient(util.Sprintf("Calling %q: %v\n", cmd, err.Error()))
 	}
 }
 
-func (h *handler) GetShortDesc() string {
+func (h *handler) GetShortDesc(viewerId string) string {
 	return "anonymous"
 }
 

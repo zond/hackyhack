@@ -1,9 +1,13 @@
 package messages
 
+import "fmt"
+
 const (
 	MethodGetContainer = "GetContainer"
 	MethodGetContent   = "GetContent"
 	MethodSendToClient = "SendToClient"
+	MethodGetShortDesc = "GetShortDesc"
+	MethodGetLongDesc  = "GetLongDesc"
 )
 
 type BlobType int
@@ -27,6 +31,10 @@ const (
 type Error struct {
 	Message string
 	Code    ErrorCode
+}
+
+func (e Error) Error() string {
+	return fmt.Sprintf("%v: %v", e.Message, e.Code)
 }
 
 type RequestHeader struct {
