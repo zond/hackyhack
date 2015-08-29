@@ -71,6 +71,11 @@ func New(code string, resourceFinder proc.ResourceFinder) (*MCP, error) {
 	return mcp, nil
 }
 
+func (m *MCP) StderrHandler(f func([]byte)) *MCP {
+	m.stderrHandler = f
+	return m
+}
+
 type flyingRequest struct {
 	waitGroup  sync.WaitGroup
 	response   *messages.Response
@@ -154,8 +159,10 @@ func (m *MCP) Call(resourceId, meth string, params, results interface{}) error {
 		return fmt.Errorf("%v: %v", e.Message, e.Code)
 	}
 
-	if err := json.Unmarshal([]byte(flying.response.Result), results); err != nil {
-		return err
+	if results != nil {
+		if err := json.Unmarshal([]byte(flying.response.Result), results); err != nil {
+			return err
+		}
 	}
 
 	return nil

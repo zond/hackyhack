@@ -12,10 +12,11 @@ const (
 )
 
 var allowedImports = map[string]bool{
-	slave:                                               true,
-	"\"strings\"":                                       true,
-	"\"github.com/zond/hackyhack/proc/interfaces\"":     true,
-	"\"github.com/zond/hackyhack/proc/slave/commands\"": true,
+	slave:                                                true,
+	"\"strings\"":                                        true,
+	"\"github.com/zond/hackyhack/client/commands\"":      true,
+	"\"github.com/zond/hackyhack/proc/interfaces\"":      true,
+	"\"github.com/zond/hackyhack/proc/slave/delegator\"": true,
 }
 
 type validator struct {

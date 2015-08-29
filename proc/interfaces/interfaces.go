@@ -9,7 +9,8 @@ type Destructible interface {
 }
 
 type MCP interface {
-	Log(string)
+	Logf(string, ...interface{})
+	Log(...interface{})
 	SendToClient(string)
 	GetResourceId() string
 	GetContainer() string

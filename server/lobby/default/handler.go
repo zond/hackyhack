@@ -1,29 +1,30 @@
 package main
 
 import (
+	"github.com/zond/hackyhack/client/commands"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/slave"
-	"github.com/zond/hackyhack/proc/slave/commands"
+	"github.com/zond/hackyhack/proc/slave/delegator"
 )
 
 type commandList struct {
 	h *handler
 }
 
-func (c *commandList) L() string {
-	return "darkness!"
+func (c *commandList) L() {
+	c.h.m.SendToClient("Darkness!\n")
 }
 
 type handler struct {
 	m  interfaces.MCP
-	ch *commands.Handler
+	ch *delegator.Delegator
 }
 
 func New(m interfaces.MCP) interfaces.Describable {
 	h := &handler{
 		m: m,
 	}
-	h.ch = commands.New(&commandList{
+	h.ch = delegator.New(&commandList{
 		h: h,
 	})
 	return h
@@ -42,12 +43,9 @@ func (h *handler) HandleClientInput(s string) {
 
 	cmd := commands.Capitalize(parts[0])
 
-	result := []string{""}
-	err := h.ch.Call(cmd, params, result)
-	if err == nil {
-		h.m.SendToClient(commands.Sprintf("%v\n", result[0]))
-	} else {
-		h.m.SendToClient(commands.Sprintf("%v\n", err.Error()))
+	err := h.ch.Call(cmd, params, nil)
+	if err != nil {
+		h.m.SendToClient(commands.Sprintf("Calling %q: %v\n", cmd, err.Error()))
 	}
 }
 

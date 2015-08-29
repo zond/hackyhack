@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -52,8 +53,12 @@ type mcp struct {
 	resourceId string
 }
 
-func (m *mcp) Log(s string) {
-	fmt.Fprintln(os.Stderr, s)
+func (m *mcp) Logf(f string, i ...interface{}) {
+	fmt.Fprintf(os.Stderr, f, i...)
+}
+
+func (m *mcp) Log(i ...interface{}) {
+	fmt.Fprintln(os.Stderr, i...)
 }
 
 func (m *mcp) GetResourceId() string {
@@ -67,7 +72,7 @@ func (m *mcp) GetContainer() string {
 }
 
 func (m *mcp) SendToClient(s string) {
-	m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodSendToClient, nil, nil)
+	m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodSendToClient, []string{s}, nil)
 }
 
 func (m *mcp) GetContent() []string {
@@ -114,6 +119,7 @@ func Register(gen SlaveGenerator) {
 func (s *slaveDriver) logErr(err error) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, string(debug.Stack()))
 	}
 }
 
@@ -170,8 +176,10 @@ func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, p
 
 	flying.waitGroup.Wait()
 
-	if err := json.Unmarshal([]byte(flying.response.Result), result); err != nil {
-		log.Fatal(err)
+	if result != nil {
+		if err := json.Unmarshal([]byte(flying.response.Result), result); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 

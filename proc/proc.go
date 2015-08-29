@@ -60,7 +60,7 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 	if len(params) > 0 {
 		if err := json.Unmarshal([]byte(request.Parameters), &params); err != nil {
 			return emitter.Error(request, &messages.Error{
-				Message: err.Error(),
+				Message: fmt.Sprintf("json.Unmarshal of parameters failed: %v", err),
 				Code:    messages.ErrorCodeJSONDecodeParameters,
 			})
 		}
@@ -69,7 +69,7 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 			rawJSON, err := json.Marshal(params[index])
 			if err != nil {
 				return emitter.Error(request, &messages.Error{
-					Message: err.Error(),
+					Message: fmt.Sprintf("json.Marshal of parameter %v failed: %v", index, err),
 					Code:    messages.ErrorCodeJSONDecodeParameters,
 				})
 			}
@@ -77,7 +77,7 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 			val := reflect.New(mt.In(index))
 			if err := json.Unmarshal(rawJSON, val.Interface()); err != nil {
 				emitter.Error(request, &messages.Error{
-					Message: err.Error(),
+					Message: fmt.Sprintf("json.Unmarshal of parameter %v failed: %v", index, err),
 					Code:    messages.ErrorCodeJSONDecodeParameters,
 				})
 			}
