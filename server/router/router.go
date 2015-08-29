@@ -3,6 +3,7 @@ package router
 import (
 	"sync"
 
+	"github.com/zond/hackyhack/proc"
 	"github.com/zond/hackyhack/proc/mcp"
 	"github.com/zond/hackyhack/server/persist"
 	"github.com/zond/hackyhack/server/router/validator"
@@ -21,11 +22,7 @@ func New(p persist.Persister) *Router {
 	}
 }
 
-func (r *Router) resourceFinder(resourceId string) (interface{}, error) {
-	return nil, nil
-}
-
-func (r *Router) createMCP(keys ...string) (*mcp.MCP, error) {
+func (r *Router) createMCP(resourceFinder proc.ResourceFinder, keys ...string) (*mcp.MCP, error) {
 	code, err := r.persister.Get(keys...)
 	if err != nil {
 		return nil, err
@@ -33,7 +30,7 @@ func (r *Router) createMCP(keys ...string) (*mcp.MCP, error) {
 	if err := validator.Validate(code); err != nil {
 		return nil, err
 	}
-	m, err := mcp.New(code, r.resourceFinder)
+	m, err := mcp.New(code, resourceFinder)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +41,7 @@ func (r *Router) createMCP(keys ...string) (*mcp.MCP, error) {
 	defer r.lock.Unlock()
 	h, err := r.handlers.get(keys...)
 	if err == errNotFound {
+		h = m
 		r.handlers.set(m, keys...)
 	} else if err != nil {
 		return nil, err
@@ -51,12 +49,12 @@ func (r *Router) createMCP(keys ...string) (*mcp.MCP, error) {
 	return h, nil
 }
 
-func (r *Router) MCP(keys ...string) (*mcp.MCP, error) {
+func (r *Router) MCP(resourceFinder proc.ResourceFinder, keys ...string) (*mcp.MCP, error) {
 	r.lock.RLock()
 	h, err := r.handlers.get(keys...)
 	r.lock.RUnlock()
 	if err == errNotFound {
-		return r.createMCP(keys...)
+		return r.createMCP(resourceFinder, keys...)
 	} else if err != nil {
 		return nil, err
 	}

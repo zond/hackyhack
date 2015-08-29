@@ -1,12 +1,9 @@
 package messages
 
 const (
-	ResourceSelf = "self"
-)
-
-const (
 	MethodGetContainer = "GetContainer"
 	MethodGetContent   = "GetContent"
+	MethodSendToClient = "SendToClient"
 )
 
 type BlobType int

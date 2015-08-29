@@ -2,12 +2,15 @@ package lobby
 
 import (
 	"crypto/hmac"
+	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/zond/gosafe"
 	"github.com/zond/hackyhack/server/persist"
@@ -22,11 +25,12 @@ func init() {
 		log.Fatalf("Unable to load default handler file %q: %v", path, err)
 	}
 	initialHandler = string(b)
+	rand.Seed(time.Now().UnixNano())
 }
 
 type Client interface {
 	Send(string) error
-	Authorize(string) error
+	Authorize(username, resourceId string) error
 }
 
 type state int
@@ -87,7 +91,11 @@ func (l *Lobby) HandleClientInput(s string) error {
 			if err := l.persister.Set(initialHandler, "users", l.user.username, "handler"); err != nil {
 				return err
 			}
-			return l.client.Authorize(l.user.username)
+			resourceId := fmt.Sprintf("%x%x", rand.Int63(), rand.Int63())
+			if err := l.persister.Set(resourceId, "users", l.user.username, "resourceId"); err != nil {
+				return err
+			}
+			return l.client.Authorize(l.user.username, resourceId)
 		case "n":
 			l.state = welcome
 			return l.client.Send(`
@@ -119,7 +127,11 @@ User not found, create? (y/n)
 				return err
 			}
 			if hmac.Equal([]byte(password), []byte(match[2])) {
-				return l.client.Authorize(match[1])
+				resourceId, err := l.persister.Get("users", match[1], "resourceId")
+				if err != nil {
+					return err
+				}
+				return l.client.Authorize(match[1], resourceId)
 			} else {
 				return l.client.Send(`
 Incorrect password.

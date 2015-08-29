@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/zond/hackyhack/proc/mcp"
 	"github.com/zond/hackyhack/server/lobby"
 	"github.com/zond/hackyhack/server/persist"
 	"github.com/zond/hackyhack/server/router"
@@ -36,11 +37,46 @@ func (c *Client) Send(s string) error {
 	return err
 }
 
-func (c *Client) Authorize(username string) error {
-	_, err := c.router.MCP("users", username, "handler")
-	if err != nil {
+type mcpHandler struct {
+	m          *mcp.MCP
+	client     *Client
+	resourceId string
+}
+
+func (m *mcpHandler) HandleClientInput(s string) error {
+	return m.m.Call(m.resourceId, "HandleClientInput", []string{s}, nil)
+}
+
+func (m *mcpHandler) resourceFinder(resourceId string) (interface{}, error) {
+	if resourceId == m.resourceId {
+		return &selfObject{client: m.client}, nil
+	}
+	return nil, nil
+}
+
+type selfObject struct {
+	client *Client
+}
+
+func (s *selfObject) SendToClient(msg string) {
+	if err := s.client.Send(msg); err != nil {
+		s.client.conn.Close()
+	}
+}
+
+func (c *Client) Authorize(username, resourceId string) error {
+	handler := &mcpHandler{
+		client:     c,
+		resourceId: resourceId,
+	}
+	var err error
+	if handler.m, err = c.router.MCP(handler.resourceFinder, "users", username, "handler"); err != nil {
 		return err
 	}
+	if _, err = handler.m.Construct(resourceId); err != nil {
+		return err
+	}
+	c.handler = handler
 	return nil
 }
 

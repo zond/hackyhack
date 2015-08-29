@@ -7,13 +7,20 @@ import (
 	"go/token"
 )
 
+const (
+	slave = "\"github.com/zond/hackyhack/proc/slave\""
+)
+
 var allowedImports = map[string]bool{
-	"\"github.com/zond/hackyhack/proc/interfaces\"": true,
-	"\"github.com/zond/hackyhack/proc/slave\"":      true,
+	slave:                                               true,
+	"\"strings\"":                                       true,
+	"\"github.com/zond/hackyhack/proc/interfaces\"":     true,
+	"\"github.com/zond/hackyhack/proc/slave/commands\"": true,
 }
 
 type validator struct {
-	disallowed []string
+	disallowed   []string
+	importsSlave bool
 }
 
 func (v *validator) Visit(n ast.Node) ast.Visitor {
@@ -21,6 +28,9 @@ func (v *validator) Visit(n ast.Node) ast.Visitor {
 		if importNode.Path != nil {
 			if !allowedImports[importNode.Path.Value] {
 				v.disallowed = append(v.disallowed, importNode.Path.Value)
+			}
+			if importNode.Path.Value == slave {
+				v.importsSlave = true
 			}
 		}
 	}
@@ -36,6 +46,9 @@ func Validate(code string) error {
 	ast.Walk(v, f)
 	if len(v.disallowed) > 0 {
 		return fmt.Errorf("Code imports disallowed packages: %+v", v.disallowed)
+	}
+	if !v.importsSlave {
+		return fmt.Errorf("Code doesn't import required package %v", slave)
 	}
 	return nil
 }

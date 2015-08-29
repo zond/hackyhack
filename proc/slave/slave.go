@@ -15,10 +15,6 @@ import (
 	"github.com/zond/hackyhack/proc/messages"
 )
 
-func Sprintf(f string, i ...interface{}) string {
-	return fmt.Sprintf(f, i...)
-}
-
 func setrlimit(i int, r *syscall.Rlimit) {
 	if err := syscall.Setrlimit(i, r); err != nil {
 		panic(err)
@@ -66,13 +62,17 @@ func (m *mcp) GetResourceId() string {
 
 func (m *mcp) GetContainer() string {
 	result := ""
-	m.driver.emitRequest(m.resourceId, messages.ResourceSelf, messages.MethodGetContent, nil, &result)
+	m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContainer, nil, &result)
 	return result
+}
+
+func (m *mcp) SendToClient(s string) {
+	m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodSendToClient, nil, nil)
 }
 
 func (m *mcp) GetContent() []string {
 	result := []string{}
-	m.driver.emitRequest(m.resourceId, messages.ResourceSelf, messages.MethodGetContent, nil, &result)
+	m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContent, nil, &result)
 	return result
 }
 
