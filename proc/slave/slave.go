@@ -78,11 +78,11 @@ func (m *mcp) GetResourceId() string {
 }
 
 func (m *mcp) GetContainer() string {
-	result := ""
+	result := []string{""}
 	if err := m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContainer, nil, &result); err != nil {
 		log.Fatal(err)
 	}
-	return result
+	return result[0]
 }
 
 func (m *mcp) SendToClient(s string) {
@@ -92,11 +92,11 @@ func (m *mcp) SendToClient(s string) {
 }
 
 func (m *mcp) GetContent() []string {
-	result := []string{}
+	result := [][]string{[]string{}}
 	if err := m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContent, nil, &result); err != nil {
 		log.Fatal(err)
 	}
-	return result
+	return result[0]
 }
 
 type flyingRequest struct {
@@ -174,7 +174,7 @@ func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, p
 	if params != nil {
 		paramBytes, err := json.Marshal(params)
 		if err != nil {
-			log.Fatal(err)
+			return fmt.Errorf("json.Marshal of params failed: %v", err)
 		}
 		request.Parameters = string(paramBytes)
 	}
@@ -196,7 +196,7 @@ func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, p
 
 	if result != nil {
 		if err := json.Unmarshal([]byte(flying.response.Result), result); err != nil {
-			log.Fatal(err)
+			return fmt.Errorf("json.Unmarshal of result failed: %v", err)
 		}
 	}
 

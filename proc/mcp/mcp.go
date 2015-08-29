@@ -122,6 +122,9 @@ func (m *MCP) Construct(resourceId string) (bool, error) {
 }
 
 func (m *MCP) Call(resourceId, meth string, params, results interface{}) error {
+	defer m.debugHandler.Trace(fmt.Sprintf("MCP#Call(%q, %q, %+v, %+v)", resourceId, meth, params, results))()
+	defer m.debugHandler("MCP#Call(...) => %+v", results)
+
 	request := &messages.Request{
 		Header: messages.RequestHeader{
 			RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
@@ -293,7 +296,17 @@ func (m *MCP) restart(proc *os.Process) {
 }
 
 func (m *MCP) handleRequest(request *messages.Request) {
-	if err := proc.HandleRequest(m.emit, m.resourceFinder, request); err != nil {
+	defer m.debugHandler.Trace(fmt.Sprintf(
+		"MCP#handleRequest for %q.%v(%+v)",
+		request.Header.ResourceId,
+		request.Header.Method,
+		request.Parameters,
+	))()
+
+	if err := proc.HandleRequest(func(blob *messages.Blob) error {
+		m.debugHandler("MCP#handleRequest for ... => %+v", blob.Response)
+		return m.emit(blob)
+	}, m.resourceFinder, request); err != nil {
 		if err := m.cleanup(); err != nil {
 			log.Fatal(err)
 		}

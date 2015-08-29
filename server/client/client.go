@@ -12,6 +12,7 @@ import (
 	"github.com/zond/hackyhack/server/lobby"
 	"github.com/zond/hackyhack/server/persist"
 	"github.com/zond/hackyhack/server/router"
+	"github.com/zond/hackyhack/server/void"
 )
 
 type Handler interface {
@@ -50,10 +51,13 @@ func (m *mcpHandler) HandleClientInput(s string) error {
 }
 
 func (m *mcpHandler) resourceFinder(resourceId string) (interface{}, error) {
-	if resourceId == m.resourceId {
+	switch resourceId {
+	case m.resourceId:
 		return &selfObject{
 			h: m,
 		}, nil
+	case "":
+		return &void.Void{}, nil
 	}
 	return nil, nil
 }

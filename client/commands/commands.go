@@ -23,11 +23,14 @@ func (d *Default) tryCall(err error) bool {
 
 func (d *Default) L() {
 	results := []string{""}
-	if d.tryCall(d.M.Call(d.M.GetContainer(), messages.MethodGetLongDesc, nil, &results)) {
+	containerId := d.M.GetContainer()
+	if d.tryCall(d.M.Call(containerId, messages.MethodGetLongDesc, d.M.GetResourceId(), &results)) {
 		d.M.SendToClient(fmt.Sprintf("%v\n", results[0]))
+		return
 	}
-	if d.tryCall(d.M.Call(d.M.GetContainer(), messages.MethodGetShortDesc, nil, &results)) {
+	if d.tryCall(d.M.Call(containerId, messages.MethodGetShortDesc, d.M.GetResourceId(), &results)) {
 		d.M.SendToClient(fmt.Sprintf("%v\n", results[0]))
+		return
 	}
 	log.Fatal("No short or long desc of container found")
 }
