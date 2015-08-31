@@ -11,11 +11,11 @@ import (
 
 type Outputter func(string, ...interface{})
 
-func (o Outputter) Trace(name string) func() {
-	o("%s ->", name)
+func (o Outputter) Trace(f string, i ...interface{}) func() {
+	o(fmt.Sprintf("%s ->", f), i...)
 	start := time.Now()
 	return func() {
-		o("%s <-\t(%v)", name, time.Now().Sub(start))
+		o(fmt.Sprintf("%s <-\t(%v)", f, time.Now().Sub(start)), i...)
 	}
 }
 

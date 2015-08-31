@@ -19,10 +19,12 @@ func (d *Default) L() {
 	}
 	var desc string
 	if util.Success(d.M, d.M.Call(containerId, messages.MethodGetLongDesc, []string{d.M.GetResource()}, &[]interface{}{&desc})) {
-		util.SendToClient(d.M, desc)
+		util.SendToClient(d.M, util.Sprintf("%v\n", desc))
+		return
 	}
 	if util.Success(d.M, d.M.Call(containerId, messages.MethodGetShortDesc, []string{d.M.GetResource()}, &[]interface{}{&desc})) {
-		util.SendToClient(d.M, desc)
+		util.SendToClient(d.M, util.Sprintf("%v\n", desc))
+		return
 	}
 	log.Fatal("No short or long desc of container found")
 }

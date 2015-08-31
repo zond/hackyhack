@@ -17,6 +17,7 @@ import (
 
 type Handler interface {
 	HandleClientInput(string) error
+	UnregisterClient()
 }
 
 type Client struct {
@@ -53,6 +54,10 @@ func (m *mcpHandler) HandleClientInput(s string) error {
 	return merr.ToErr()
 }
 
+func (m *mcpHandler) UnregisterClient() {
+	m.client.router.UnregisterClient(m.user.Resource)
+}
+
 func (c *Client) Authorize(user *user.User) error {
 	handler := &mcpHandler{
 		client: c,
@@ -66,6 +71,7 @@ func (c *Client) Authorize(user *user.User) error {
 		return err
 	}
 	c.handler = handler
+	c.router.RegisterClient(user.Resource, c)
 	return nil
 }
 
@@ -77,6 +83,7 @@ func (c *Client) Handle(conn net.Conn) error {
 		return err
 	}
 	c.handler = lobby
+	defer c.handler.UnregisterClient()
 	line, err := c.reader.ReadString('\n')
 	for ; err == nil; line, err = c.reader.ReadString('\n') {
 		line = strings.TrimSpace(line)

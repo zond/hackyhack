@@ -3,7 +3,6 @@ package delegator
 import (
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 )
 
@@ -95,7 +94,6 @@ func (h *Delegator) verifySlice(
 }
 
 func (h *Delegator) Call(methName string, params, results interface{}) error {
-	fmt.Fprintf(os.Stderr, "Call(%q, %+v, %+v)\n", methName, params, results)
 	methVal := h.b.MethodByName(methName)
 	if !methVal.IsValid() {
 		return fmt.Errorf("No method %q found", methName)

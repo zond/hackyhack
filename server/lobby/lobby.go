@@ -75,6 +75,9 @@ func New(p *persist.Persister, c Client) *Lobby {
 	return lobby
 }
 
+func (l *Lobby) UnregisterClient() {
+}
+
 var loginReg = regexp.MustCompile("^login (\\w+) (\\w+)$")
 
 func (l *Lobby) HandleClientInput(s string) error {

@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/zond/hackyhack/proc"
 	"github.com/zond/hackyhack/proc/messages"
 )
@@ -62,7 +63,9 @@ func New(code string, resourceFinder proc.ResourceFinder) (*MCP, error) {
 		stderrHandler: func(b []byte) {
 			log.Printf("STDERR: %q", b)
 		},
-		debugHandler: log.Printf,
+		debugHandler: func(f string, i ...interface{}) {
+			log.Printf(spew.Sprintf(fmt.Sprintf("%s\n", f), i...))
+		},
 		errHandler: func(err error) {
 			log.Print(err)
 		},
@@ -143,8 +146,8 @@ func (m *MCP) SendRequest(request *messages.Request) (*messages.Response, error)
 }
 
 func (m *MCP) Call(source, resource, meth string, params, results interface{}) error {
-	defer m.debugHandler.Trace(fmt.Sprintf("MCP#Call(%q, %q, %q, %+v, %+v)", source, resource, meth, params, results))()
-	defer m.debugHandler("MCP#Call(...) => %+v", results)
+	defer m.debugHandler.Trace("MCP#Call(%q, %q, %q, %#v, %#v)", source, resource, meth, params, results)()
+	defer m.debugHandler("MCP#Call(...) => %#v", results)
 
 	request := &messages.Request{
 		Header: messages.RequestHeader{
@@ -305,16 +308,16 @@ func (m *MCP) restart(proc *os.Process) {
 }
 
 func (m *MCP) handleRequest(request *messages.Request) {
-	defer m.debugHandler.Trace(fmt.Sprintf(
-		"MCP#handleRequest by %q for %q.%v(%+v)",
+	defer m.debugHandler.Trace(
+		"MCP#handleRequest by %q for %q.%v(%#v)",
 		request.Header.Source,
 		request.Resource,
 		request.Method,
 		request.Parameters,
-	))()
+	)()
 
 	if err := proc.HandleRequest(func(blob *messages.Blob) error {
-		m.debugHandler("MCP#handleRequest for ... => %+v", blob.Response)
+		m.debugHandler("MCP#handleRequest for ... => %#v", blob.Response)
 		return m.emit(blob)
 	}, m.resourceFinder, request); err != nil {
 		if err := m.cleanup(); err != nil {

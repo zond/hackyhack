@@ -15,13 +15,13 @@ import (
 )
 
 type resourceWrapper struct {
-	resource  string
-	persister *persist.Persister
+	router   *Router
+	resource string
 }
 
 func (w *resourceWrapper) GetContainer() (string, *messages.Error) {
 	res := &resource.Resource{}
-	if err := w.persister.Get(w.resource, res); err != nil {
+	if err := w.router.persister.Get(w.resource, res); err != nil {
 		return "", &messages.Error{
 			Message: fmt.Sprintf("persister.Get failed: %v", err),
 			Code:    messages.ErrorCodeDatabase,
@@ -32,7 +32,7 @@ func (w *resourceWrapper) GetContainer() (string, *messages.Error) {
 
 func (w *resourceWrapper) GetContent() ([]string, *messages.Error) {
 	res := &resource.Resource{}
-	if err := w.persister.Get(w.resource, res); err != nil {
+	if err := w.router.persister.Get(w.resource, res); err != nil {
 		return nil, &messages.Error{
 			Message: fmt.Sprintf("persister.Get failed: %v", err),
 			Code:    messages.ErrorCodeDatabase,
@@ -52,6 +52,7 @@ type clientWrapper struct {
 
 func (w *clientWrapper) SendToClient(s string) *messages.Error {
 	if err := w.client.Send(s); err != nil {
+		w.resourceWrapper.router.UnregisterClient(w.resourceWrapper.resource)
 		return &messages.Error{
 			Message: fmt.Sprintf("client.Send failed: %v", err),
 			Code:    messages.ErrorCodeSendToClient,
@@ -65,6 +66,7 @@ type Router struct {
 	handlers  map[string]*mcp.MCP
 	lock      sync.RWMutex
 	void      *void.Void
+	clients   map[string]Client
 }
 
 func New(p *persist.Persister) *Router {
@@ -72,15 +74,38 @@ func New(p *persist.Persister) *Router {
 		persister: p,
 		handlers:  map[string]*mcp.MCP{},
 		void:      void.New(p),
+		clients:   map[string]Client{},
 	}
+}
+
+func (r *Router) RegisterClient(resource string, client Client) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.clients[resource] = client
+}
+
+func (r *Router) UnregisterClient(resource string) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	delete(r.clients, resource)
 }
 
 func (r *Router) findResource(source, id string) (interface{}, error) {
 	if id == source {
-		return &resourceWrapper{
-			resource:  id,
-			persister: r.persister,
-		}, nil
+		result := &resourceWrapper{
+			resource: id,
+			router:   r,
+		}
+		r.lock.RLock()
+		client, found := r.clients[id]
+		r.lock.RUnlock()
+		if found {
+			return &clientWrapper{
+				resourceWrapper: *result,
+				client:          client,
+			}, nil
+		}
+		return result, nil
 	}
 	if id == "" {
 		return r.void, nil
