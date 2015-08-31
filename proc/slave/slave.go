@@ -49,60 +49,22 @@ var (
 )
 
 type mcp struct {
-	driver     *slaveDriver
-	resourceId string
+	driver   *slaveDriver
+	resource string
 }
 
-func (m *mcp) Call(resourceId, method string, params, results interface{}) error {
-	return m.driver.emitRequest(m.resourceId, resourceId, method, params, results)
+func (m *mcp) Call(resourceId, method string, params, results interface{}) *messages.Error {
+	return m.driver.emitRequest(m.resource, resourceId, method, params, results)
 }
 
-func (m *mcp) Fatal(i ...interface{}) {
-	log.Fatal(i...)
-}
-
-func (m *mcp) Fatalf(f string, i ...interface{}) {
-	log.Fatalf(f, i...)
-}
-
-func (m *mcp) Logf(f string, i ...interface{}) {
-	fmt.Fprintf(os.Stderr, f, i...)
-}
-
-func (m *mcp) Log(i ...interface{}) {
-	fmt.Fprintln(os.Stderr, i...)
-}
-
-func (m *mcp) GetResourceId() string {
-	return m.resourceId
-}
-
-func (m *mcp) GetContainer() string {
-	result := []string{""}
-	if err := m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContainer, nil, &result); err != nil {
-		log.Fatal(err)
-	}
-	return result[0]
-}
-
-func (m *mcp) SendToClient(s string) {
-	if err := m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodSendToClient, []string{s}, nil); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func (m *mcp) GetContent() []string {
-	result := [][]string{[]string{}}
-	if err := m.driver.emitRequest(m.resourceId, m.resourceId, messages.MethodGetContent, nil, &result); err != nil {
-		log.Fatal(err)
-	}
-	return result[0]
+func (m *mcp) GetResource() string {
+	return m.resource
 }
 
 type flyingRequest struct {
-	waitGroup  sync.WaitGroup
-	response   *messages.Response
-	resourceId string
+	waitGroup sync.WaitGroup
+	response  *messages.Response
+	resource  string
 }
 
 type slaveDriver struct {
@@ -141,12 +103,12 @@ func (s *slaveDriver) logErr(err error) {
 	}
 }
 
-func (s *slaveDriver) findSlave(resourceId string) (interface{}, error) {
+func (s *slaveDriver) findSlave(source, resource string) (interface{}, error) {
 	s.slaveLock.RLock()
-	slave, found := s.slaves[resourceId]
+	slave, found := s.slaves[resource]
 	s.slaveLock.RUnlock()
 	if !found {
-		return nil, fmt.Errorf("No slave %q found", resourceId)
+		return nil, fmt.Errorf("No slave %q found", resource)
 	}
 	return slave, nil
 }
@@ -155,36 +117,43 @@ func (s *slaveDriver) handleRequest(request *messages.Request) {
 	s.logErr(proc.HandleRequest(s.emit, s.findSlave, request))
 }
 
-func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, params, result interface{}) error {
+func (s *slaveDriver) emitRequest(source, resource, method string, params, result interface{}) *messages.Error {
 	s.slaveLock.RLock()
-	_, found := s.slaves[srcResourceId]
+	_, found := s.slaves[source]
 	s.slaveLock.RUnlock()
 	if !found {
-		log.Fatal(fmt.Errorf("Unregistered resource id %q", srcResourceId))
+		return &messages.Error{
+			Message: fmt.Sprintf("Unregistered resource id %q", source),
+			Code:    messages.ErrorCodeNoSuchResource,
+		}
 	}
 
 	request := &messages.Request{
 		Header: messages.RequestHeader{
-			RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
-			ResourceId: dstResourceId,
-			Method:     method,
+			Id:     fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
+			Source: source,
 		},
+		Resource: resource,
+		Method:   method,
 	}
 
 	if params != nil {
 		paramBytes, err := json.Marshal(params)
 		if err != nil {
-			return fmt.Errorf("json.Marshal of params failed: %v", err)
+			return &messages.Error{
+				Message: fmt.Sprintf("json.Marshal of params failed: %v", err),
+				Code:    messages.ErrorCodeJSONEncodeParameters,
+			}
 		}
 		request.Parameters = string(paramBytes)
 	}
 
 	flying := &flyingRequest{
-		resourceId: srcResourceId,
+		resource: resource,
 	}
 	flying.waitGroup.Add(1)
 	s.flyingRequestsLock.Lock()
-	s.flyingRequests[request.Header.RequestId] = flying
+	s.flyingRequests[request.Header.Id] = flying
 	s.flyingRequestsLock.Unlock()
 
 	s.emit(&messages.Blob{
@@ -196,7 +165,10 @@ func (s *slaveDriver) emitRequest(srcResourceId, dstResourceId, method string, p
 
 	if result != nil {
 		if err := json.Unmarshal([]byte(flying.response.Result), result); err != nil {
-			return fmt.Errorf("json.Unmarshal of result failed: %v", err)
+			return &messages.Error{
+				Message: fmt.Sprintf("json.Unmarshal of result failed: %v", err),
+				Code:    messages.ErrorCodeJSONDecodeResult,
+			}
 		}
 	}
 
@@ -213,8 +185,8 @@ func (s *slaveDriver) handleResponse(response *messages.Response) {
 	}
 
 	s.flyingRequestsLock.Lock()
-	flying, found := s.flyingRequests[response.Header.RequestId]
-	delete(s.flyingRequests, response.Header.RequestId)
+	flying, found := s.flyingRequests[response.Header.Id]
+	delete(s.flyingRequests, response.Header.Id)
 	s.flyingRequestsLock.Unlock()
 	if found {
 		flying.response = response
@@ -231,36 +203,36 @@ func (s *slaveDriver) emit(blob *messages.Blob) error {
 	return nil
 }
 
-func (s *slaveDriver) destruct(d *messages.Destruct) {
+func (s *slaveDriver) destruct(d *messages.Deconstruct) {
 	s.slaveLock.Lock()
-	slave, found := s.slaves[d.ResourceId]
+	slave, found := s.slaves[d.Resource]
 	if found {
 		if destructible, ok := slave.(interfaces.Destructible); ok {
 			go destructible.Destroy()
 		}
-		d.Destroyed = true
+		d.Deconstructed = true
 	}
-	delete(s.slaves, d.ResourceId)
+	delete(s.slaves, d.Resource)
 	s.slaveLock.Unlock()
 
 	s.flyingRequestsLock.Lock()
 	for requestId, flying := range s.flyingRequests {
-		if flying.resourceId == d.ResourceId {
+		if flying.resource == d.Resource {
 			delete(s.flyingRequests, requestId)
 		}
 	}
 	s.flyingRequestsLock.Unlock()
 }
 
-func (s *slaveDriver) construct(c *messages.Construct) {
+func (s *slaveDriver) construct(c *messages.Deconstruct) {
 	s.slaveLock.Lock()
-	_, found := s.slaves[c.ResourceId]
+	_, found := s.slaves[c.Resource]
 	if !found {
-		s.slaves[c.ResourceId] = s.generator(&mcp{
-			driver:     s,
-			resourceId: c.ResourceId,
+		s.slaves[c.Resource] = s.generator(&mcp{
+			driver:   s,
+			resource: c.Resource,
 		})
-		c.Constructed = true
+		c.Deconstructed = true
 	}
 	s.slaveLock.Unlock()
 

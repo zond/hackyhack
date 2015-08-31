@@ -19,6 +19,8 @@ func main() {
 		panic(err)
 	}
 
-	s := server.New(persist.NewMem())
+	s := server.New(&persist.Persister{
+		Backend: persist.NewMem(),
+	})
 	log.Fatal(s.Serve(l))
 }

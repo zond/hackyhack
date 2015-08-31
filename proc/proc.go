@@ -26,29 +26,51 @@ func (e Emitter) Error(request *messages.Request, err *messages.Error) error {
 		Type: messages.BlobTypeResponse,
 		Response: &messages.Response{
 			Header: messages.ResponseHeader{
-				RequestId: request.Header.RequestId,
-				Error:     err,
+				Id:    request.Header.Id,
+				Error: err,
 			},
 		},
 	})
 }
 
-type ResourceFinder func(resourceId string) (interface{}, error)
+type RequestHandler func(*messages.Request) (*messages.Response, error)
+
+type ResourceProxy struct {
+	SendRequest RequestHandler
+}
+
+type ResourceFinder func(askerId, resourceId string) (interface{}, error)
 
 func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *messages.Request) error {
-	resource, err := resourceFinder(request.Header.ResourceId)
+	resource, err := resourceFinder(request.Header.Source, request.Resource)
 	if err != nil {
 		return emitter.Error(request, &messages.Error{
 			Message: err.Error(),
 			Code:    messages.ErrorCodeNoSuchResource,
 		})
 	}
+
+	if proxy, ok := resource.(ResourceProxy); ok {
+		response, err := proxy.SendRequest(request)
+		if err != nil {
+			return emitter.Error(request, &messages.Error{
+				Message: err.Error(),
+				Code:    messages.ErrorCodeProxyFailed,
+			})
+		}
+
+		return emitter(&messages.Blob{
+			Type:     messages.BlobTypeResponse,
+			Response: response,
+		})
+	}
+
 	resourceVal := reflect.ValueOf(resource)
 
-	m := resourceVal.MethodByName(request.Header.Method)
+	m := resourceVal.MethodByName(request.Method)
 	if !m.IsValid() {
 		return emitter.Error(request, &messages.Error{
-			Message: fmt.Sprintf("No method %q found.", request.Header.Method),
+			Message: fmt.Sprintf("No method %q found.", request.Method),
 			Code:    messages.ErrorCodeNoSuchMethod,
 		})
 	}
@@ -103,7 +125,7 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 		Type: messages.BlobTypeResponse,
 		Response: &messages.Response{
 			Header: messages.ResponseHeader{
-				RequestId: request.Header.RequestId,
+				Id: request.Header.Id,
 			},
 			Result: string(resultBytes),
 		},

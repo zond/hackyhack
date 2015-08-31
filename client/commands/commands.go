@@ -1,9 +1,9 @@
 package commands
 
 import (
-	"fmt"
 	"log"
 
+	"github.com/zond/hackyhack/client/util"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/messages"
 )
@@ -12,25 +12,17 @@ type Default struct {
 	M interfaces.MCP
 }
 
-func (d *Default) tryCall(err error) bool {
-	if perr, ok := err.(*messages.Error); ok && perr.Code == messages.ErrorCodeNoSuchMethod {
-		return false
-	} else if err != nil {
-		d.M.Fatal(err)
-	}
-	return true
-}
-
 func (d *Default) L() {
-	results := []string{""}
-	containerId := d.M.GetContainer()
-	if d.tryCall(d.M.Call(containerId, messages.MethodGetLongDesc, d.M.GetResourceId(), &results)) {
-		d.M.SendToClient(fmt.Sprintf("%v\n", results[0]))
+	containerId, err := util.GetContainer(d.M)
+	if err != nil {
 		return
 	}
-	if d.tryCall(d.M.Call(containerId, messages.MethodGetShortDesc, d.M.GetResourceId(), &results)) {
-		d.M.SendToClient(fmt.Sprintf("%v\n", results[0]))
-		return
+	var desc string
+	if util.Success(d.M, d.M.Call(containerId, messages.MethodGetLongDesc, []string{d.M.GetResource()}, &[]interface{}{&desc})) {
+		util.SendToClient(d.M, desc)
+	}
+	if util.Success(d.M, d.M.Call(containerId, messages.MethodGetShortDesc, []string{d.M.GetResource()}, &[]interface{}{&desc})) {
+		util.SendToClient(d.M, desc)
 	}
 	log.Fatal("No short or long desc of container found")
 }

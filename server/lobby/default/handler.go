@@ -4,6 +4,7 @@ import (
 	"github.com/zond/hackyhack/client/commands"
 	"github.com/zond/hackyhack/client/util"
 	"github.com/zond/hackyhack/proc/interfaces"
+	"github.com/zond/hackyhack/proc/messages"
 	"github.com/zond/hackyhack/proc/slave"
 	"github.com/zond/hackyhack/proc/slave/delegator"
 )
@@ -23,10 +24,11 @@ func New(m interfaces.MCP) interfaces.Describable {
 	return h
 }
 
-func (h *handler) HandleClientInput(s string) {
+func (h *handler) HandleClientInput(s string) *messages.Error {
+	util.Logf("handle client input %q called\n", s)
 	parts := util.SplitWhitespace(s)
 	if len(parts) == 0 {
-		return
+		return nil
 	}
 
 	var params []string
@@ -36,10 +38,14 @@ func (h *handler) HandleClientInput(s string) {
 
 	cmd := util.Capitalize(parts[0])
 
-	err := h.ch.Call(cmd, params, nil)
-	if err != nil {
-		h.m.SendToClient(util.Sprintf("Calling %q: %v\n", cmd, err.Error()))
+	if err := h.ch.Call(cmd, params, nil); err != nil {
+		util.Logf("call produced %+v\n", err)
+		return &messages.Error{
+			Message: err.Error(),
+		}
 	}
+
+	return nil
 }
 
 func (h *handler) GetShortDesc(viewerId string) string {

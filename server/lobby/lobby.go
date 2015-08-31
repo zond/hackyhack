@@ -14,6 +14,8 @@ import (
 
 	"github.com/zond/gosafe"
 	"github.com/zond/hackyhack/server/persist"
+	"github.com/zond/hackyhack/server/resource"
+	"github.com/zond/hackyhack/server/user"
 )
 
 var initialHandler string
@@ -30,7 +32,7 @@ func init() {
 
 type Client interface {
 	Send(string) error
-	Authorize(username, resourceId string) error
+	Authorize(*user.User) error
 }
 
 type state int
@@ -39,11 +41,6 @@ const (
 	welcome state = iota
 	createUser
 )
-
-type user struct {
-	username string
-	password string
-}
 
 type gosafeHandler struct {
 	cmd *gosafe.Cmd
@@ -62,13 +59,13 @@ func (h *gosafeHandler) Input(s string) error {
 
 type Lobby struct {
 	client    Client
-	persister persist.Persister
+	persister *persist.Persister
 	state     state
-	user      user
+	user      *user.User
 	compiler  *gosafe.Compiler
 }
 
-func New(p persist.Persister, c Client) *Lobby {
+func New(p *persist.Persister, c Client) *Lobby {
 	lobby := &Lobby{
 		client:    c,
 		persister: p,
@@ -85,17 +82,22 @@ func (l *Lobby) HandleClientInput(s string) error {
 	case createUser:
 		switch strings.ToLower(s) {
 		case "y":
-			if err := l.persister.Set(l.user.password, "users", l.user.username, "password"); err != nil {
+			if err := l.persister.Transact(func(p *persist.Persister) error {
+				if err := p.Put(l.user.Username, l.user); err != nil {
+					return err
+				}
+				r := &resource.Resource{
+					Id:   l.user.Resource,
+					Code: initialHandler,
+				}
+				if err := p.Put(r.Id, r); err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
 				return err
 			}
-			resourceId := fmt.Sprintf("%x%x", rand.Int63(), rand.Int63())
-			if err := l.persister.Set(resourceId, "users", l.user.username, "resourceId"); err != nil {
-				return err
-			}
-			if err := l.persister.Set(initialHandler, "resources", resourceId, "handler"); err != nil {
-				return err
-			}
-			return l.client.Authorize(l.user.username, resourceId)
+			return l.client.Authorize(l.user)
 		case "n":
 			l.state = welcome
 			return l.client.Send(`
@@ -113,30 +115,31 @@ Usage:
 login USERNAME PASSWORD
 `)
 		} else {
-			password, err := l.persister.Get("users", match[1], "password")
-			if err == persist.ErrNotFound {
+			users := []user.User{}
+			if err := l.persister.Find(user.User{
+				Username: match[1],
+			}, &users); err != nil {
+				return err
+			}
+			if len(users) == 0 {
 				l.state = createUser
-				l.user = user{
-					username: match[1],
-					password: match[2],
+				l.user = &user.User{
+					Username: match[1],
+					Password: match[2],
+					Resource: fmt.Sprintf("%x%x", rand.Int63(), rand.Int63()),
 				}
 				return l.client.Send(`
 User not found, create? (y/n)
 `)
-			} else if err != nil {
-				return err
 			}
-			if hmac.Equal([]byte(password), []byte(match[2])) {
-				resourceId, err := l.persister.Get("users", match[1], "resourceId")
-				if err != nil {
-					return err
+			for index := range users {
+				if hmac.Equal([]byte(match[2]), []byte(users[index].Password)) {
+					return l.client.Authorize(&users[index])
 				}
-				return l.client.Authorize(match[1], resourceId)
-			} else {
-				return l.client.Send(`
+			}
+			return l.client.Send(`
 Incorrect password.
 `)
-			}
 		}
 	}
 	return nil

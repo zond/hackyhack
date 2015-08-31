@@ -22,10 +22,17 @@ const (
 type ErrorCode int
 
 const (
-	ErrorCodeNoSuchMethod ErrorCode = iota
+	ErrorCodeUnknown ErrorCode = iota
+	ErrorCodeNoSuchMethod
+	ErrorCodeMethodMismatch
 	ErrorCodeNoSuchResource
 	ErrorCodeJSONDecodeParameters
+	ErrorCodeJSONEncodeParameters
+	ErrorCodeJSONDecodeResult
 	ErrorCodeJSONEncodeResult
+	ErrorCodeProxyFailed
+	ErrorCodeSendToClient
+	ErrorCodeDatabase
 )
 
 type Error struct {
@@ -33,25 +40,32 @@ type Error struct {
 	Code    ErrorCode
 }
 
-func (e Error) Error() string {
-	return fmt.Sprintf("%v: %v", e.Message, e.Code)
+func (e *Error) ToErr() error {
+	if e == nil {
+		return nil
+	}
+	return fmt.Errorf("%v: %v", e.Message, e.Code)
+}
+
+func FromErr(err error) *Error {
+	return &Error{Message: err.Error()}
 }
 
 type RequestHeader struct {
-	RequestId  string
-	ResourceId string
-	Method     string
-}
-
-type ResponseHeader struct {
-	RequestId  string
-	ResourceId string
-	Error      *Error `json:",omitempty"`
+	Id     string
+	Source string
 }
 
 type Request struct {
 	Header     RequestHeader
+	Resource   string
+	Method     string
 	Parameters string
+}
+
+type ResponseHeader struct {
+	Id    string
+	Error *Error `json:",omitempty"`
 }
 
 type Response struct {
@@ -59,22 +73,16 @@ type Response struct {
 	Result string
 }
 
-type Construct struct {
-	RequestId   string
-	ResourceId  string
-	Constructed bool
-}
-
-type Destruct struct {
-	RequestId  string
-	ResourceId string
-	Destroyed  bool
+type Deconstruct struct {
+	Id            string
+	Resource      string
+	Deconstructed bool
 }
 
 type Blob struct {
 	Type      BlobType
-	Request   *Request   `json:",omitempty"`
-	Response  *Response  `json:",omitempty"`
-	Construct *Construct `json:",omitempty"`
-	Destruct  *Destruct  `json:",omitempty"`
+	Request   *Request     `json:",omitempty"`
+	Response  *Response    `json:",omitempty"`
+	Construct *Deconstruct `json:",omitempty"`
+	Destruct  *Deconstruct `json:",omitempty"`
 }

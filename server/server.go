@@ -9,11 +9,11 @@ import (
 )
 
 type Server struct {
-	persister persist.Persister
+	persister *persist.Persister
 	router    *router.Router
 }
 
-func New(p persist.Persister) *Server {
+func New(p *persist.Persister) *Server {
 	return &Server{
 		persister: p,
 		router:    router.New(p),

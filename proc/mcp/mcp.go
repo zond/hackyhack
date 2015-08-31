@@ -83,30 +83,30 @@ type flyingRequest struct {
 }
 
 type flyingConstruct struct {
-	waitGroup  sync.WaitGroup
-	resourceId string
-	construct  *messages.Construct
+	waitGroup sync.WaitGroup
+	resource  string
+	construct *messages.Deconstruct
 }
 
 type flyingDestruct struct {
-	waitGroup  sync.WaitGroup
-	resourceId string
-	destruct   *messages.Destruct
+	waitGroup sync.WaitGroup
+	resource  string
+	destruct  *messages.Deconstruct
 }
 
-func (m *MCP) Construct(resourceId string) (bool, error) {
-	construct := &messages.Construct{
-		ResourceId: resourceId,
-		RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
+func (m *MCP) Construct(resource string) (bool, error) {
+	construct := &messages.Deconstruct{
+		Resource: resource,
+		Id:       fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
 	}
 
 	flying := &flyingConstruct{
-		resourceId: resourceId,
+		resource: resource,
 	}
 
 	flying.waitGroup.Add(1)
 	m.flyingLock.Lock()
-	m.flyingConstructs[construct.RequestId] = flying
+	m.flyingConstructs[construct.Id] = flying
 	m.flyingLock.Unlock()
 
 	if err := m.emit(&messages.Blob{
@@ -118,53 +118,62 @@ func (m *MCP) Construct(resourceId string) (bool, error) {
 
 	flying.waitGroup.Wait()
 
-	return flying.construct.Constructed, nil
+	return flying.construct.Deconstructed, nil
 }
 
-func (m *MCP) Call(resourceId, meth string, params, results interface{}) error {
-	defer m.debugHandler.Trace(fmt.Sprintf("MCP#Call(%q, %q, %+v, %+v)", resourceId, meth, params, results))()
-	defer m.debugHandler("MCP#Call(...) => %+v", results)
-
-	request := &messages.Request{
-		Header: messages.RequestHeader{
-			RequestId:  fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
-			ResourceId: resourceId,
-			Method:     meth,
-		},
-	}
-
-	if params != nil {
-		paramBytes, err := json.Marshal(params)
-		if err != nil {
-			return err
-		}
-		request.Parameters = string(paramBytes)
-	}
-
+func (m *MCP) SendRequest(request *messages.Request) (*messages.Response, error) {
 	flying := &flyingRequest{
-		resourceId: resourceId,
+		resourceId: request.Resource,
 	}
 	flying.waitGroup.Add(1)
 	m.flyingLock.Lock()
-	m.flyingRequests[request.Header.RequestId] = flying
+	m.flyingRequests[request.Header.Id] = flying
 	m.flyingLock.Unlock()
 
 	if err := m.emit(&messages.Blob{
 		Type:    messages.BlobTypeRequest,
 		Request: request,
 	}); err != nil {
-		return err
+		return nil, err
 	}
 
 	flying.waitGroup.Wait()
 
-	if e := flying.response.Header.Error; e != nil {
+	return flying.response, nil
+}
+
+func (m *MCP) Call(source, resource, meth string, params, results interface{}) error {
+	defer m.debugHandler.Trace(fmt.Sprintf("MCP#Call(%q, %q, %q, %+v, %+v)", source, resource, meth, params, results))()
+	defer m.debugHandler("MCP#Call(...) => %+v", results)
+
+	request := &messages.Request{
+		Header: messages.RequestHeader{
+			Id: fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
+		},
+		Resource: resource,
+		Method:   meth,
+	}
+
+	if params != nil {
+		paramBytes, err := json.Marshal(params)
+		if err != nil {
+			return fmt.Errorf("json.Marshal failed: %v", err)
+		}
+		request.Parameters = string(paramBytes)
+	}
+
+	response, err := m.SendRequest(request)
+	if err != nil {
+		return err
+	}
+
+	if e := response.Header.Error; e != nil {
 		return fmt.Errorf("%v: %v", e.Message, e.Code)
 	}
 
 	if results != nil {
-		if err := json.Unmarshal([]byte(flying.response.Result), results); err != nil {
-			return err
+		if err := json.Unmarshal([]byte(response.Result), results); err != nil {
+			return fmt.Errorf("json.Unmarshal failed: %v", err)
 		}
 	}
 
@@ -297,9 +306,10 @@ func (m *MCP) restart(proc *os.Process) {
 
 func (m *MCP) handleRequest(request *messages.Request) {
 	defer m.debugHandler.Trace(fmt.Sprintf(
-		"MCP#handleRequest for %q.%v(%+v)",
-		request.Header.ResourceId,
-		request.Header.Method,
+		"MCP#handleRequest by %q for %q.%v(%+v)",
+		request.Header.Source,
+		request.Resource,
+		request.Method,
 		request.Parameters,
 	))()
 
@@ -320,10 +330,10 @@ func (m *MCP) Stop() error {
 	return nil
 }
 
-func (m *MCP) constructDone(c *messages.Construct) {
+func (m *MCP) constructDone(c *messages.Deconstruct) {
 	m.flyingLock.Lock()
-	flying, found := m.flyingConstructs[c.RequestId]
-	delete(m.flyingConstructs, c.RequestId)
+	flying, found := m.flyingConstructs[c.Id]
+	delete(m.flyingConstructs, c.Id)
 	m.flyingLock.Unlock()
 	if found {
 		flying.construct = c
@@ -333,8 +343,8 @@ func (m *MCP) constructDone(c *messages.Construct) {
 
 func (m *MCP) handleResponse(response *messages.Response) {
 	m.flyingLock.Lock()
-	flying, found := m.flyingRequests[response.Header.RequestId]
-	delete(m.flyingRequests, response.Header.RequestId)
+	flying, found := m.flyingRequests[response.Header.Id]
+	delete(m.flyingRequests, response.Header.Id)
 	m.flyingLock.Unlock()
 	if found {
 		flying.response = response
@@ -342,10 +352,10 @@ func (m *MCP) handleResponse(response *messages.Response) {
 	}
 }
 
-func (m *MCP) destructDone(d *messages.Destruct) {
+func (m *MCP) destructDone(d *messages.Deconstruct) {
 	m.flyingLock.Lock()
-	flying, found := m.flyingDestructs[d.RequestId]
-	delete(m.flyingDestructs, d.RequestId)
+	flying, found := m.flyingDestructs[d.Id]
+	delete(m.flyingDestructs, d.Id)
 	m.flyingLock.Unlock()
 	if found {
 		flying.destruct = d

@@ -3,6 +3,7 @@ package delegator
 import (
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 )
 
@@ -20,7 +21,7 @@ var ErrNoSuchMethod = errors.New("No such method")
 var ErrWrongNumberOfParams = errors.New("Wrong number of params")
 var ErrWrongNumberOfResults = errors.New("Wrong number of results")
 var ErrParamsNotSlice = errors.New("Params is not a slice")
-var ErrResultsNotSlice = errors.New("Results is not a slice")
+var ErrResultsNotPointerToSlice = errors.New("Results is not a pointer to a slice")
 
 type TypeError struct {
 	Kind  string
@@ -58,6 +59,8 @@ func (h *Delegator) verifySlice(
 	typeErrGen func(index int, got reflect.Type, want reflect.Type) error,
 	sliceErr error,
 	lenErr error,
+	wantPtr bool,
+	ptrErr error,
 ) []reflect.Value {
 	result := make([]reflect.Value, wantedLen)
 	if slice == nil {
@@ -65,6 +68,13 @@ func (h *Delegator) verifySlice(
 	}
 
 	sliceVal := reflect.ValueOf(slice)
+	if wantPtr {
+		if sliceVal.Kind() != reflect.Ptr {
+			*errs = append(*errs, ptrErr)
+			return result
+		}
+		sliceVal = sliceVal.Elem()
+	}
 	if sliceVal.Kind() == reflect.Slice {
 		if sliceVal.Len() == wantedLen {
 			for i := 0; i < wantedLen; i++ {
@@ -85,9 +95,10 @@ func (h *Delegator) verifySlice(
 }
 
 func (h *Delegator) Call(methName string, params, results interface{}) error {
+	fmt.Fprintf(os.Stderr, "Call(%q, %+v, %+v)\n", methName, params, results)
 	methVal := h.b.MethodByName(methName)
 	if !methVal.IsValid() {
-		return ErrNoSuchMethod
+		return fmt.Errorf("No method %q found", methName)
 	}
 	methType := methVal.Type()
 
@@ -101,6 +112,8 @@ func (h *Delegator) Call(methName string, params, results interface{}) error {
 		newTypeErrorGen("parameter"),
 		ErrParamsNotSlice,
 		ErrWrongNumberOfParams,
+		false,
+		nil,
 	)
 
 	callResults := h.verifySlice(
@@ -109,8 +122,10 @@ func (h *Delegator) Call(methName string, params, results interface{}) error {
 		methType.Out,
 		&errs,
 		newTypeErrorGen("result"),
-		ErrResultsNotSlice,
+		ErrResultsNotPointerToSlice,
 		ErrWrongNumberOfResults,
+		true,
+		ErrResultsNotPointerToSlice,
 	)
 
 	if errs != nil {
