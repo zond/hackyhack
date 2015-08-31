@@ -25,7 +25,6 @@ func New(m interfaces.MCP) interfaces.Describable {
 }
 
 func (h *handler) HandleClientInput(s string) *messages.Error {
-	util.Logf("handle client input %q called\n", s)
 	parts := util.SplitWhitespace(s)
 	if len(parts) == 0 {
 		return nil
@@ -39,7 +38,6 @@ func (h *handler) HandleClientInput(s string) *messages.Error {
 	cmd := util.Capitalize(parts[0])
 
 	if err := h.ch.Call(cmd, params, nil); err != nil {
-		util.Logf("call produced %+v\n", err)
 		return &messages.Error{
 			Message: err.Error(),
 		}
