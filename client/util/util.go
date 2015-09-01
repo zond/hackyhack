@@ -1,14 +1,55 @@
 package util
 
 import (
+	"bytes"
 	"fmt"
 	"log"
+	"reflect"
 	"regexp"
 	"strings"
 
+	"github.com/gedex/inflector"
+	"github.com/zond/hackyhack/lang"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/messages"
 )
+
+func Is(item interface{}) string {
+	if val := reflect.ValueOf(item); val.Kind() == reflect.Slice && val.Len() > 1 {
+		return "are"
+	}
+	return "is"
+}
+
+func Enumerate(item interface{}) string {
+	val := reflect.ValueOf(item)
+	if val.Kind() == reflect.Slice {
+		descs := map[string]int{}
+		for i := 0; i < val.Len(); i++ {
+			desc := fmt.Sprint(val.Index(i))
+			descs[desc] = descs[desc] + 1
+		}
+		result := []string{}
+		for desc, count := range descs {
+			if count == 1 {
+				result = append(result, fmt.Sprintf("%v %v", lang.Art(desc), desc))
+			} else {
+				result = append(result, fmt.Sprintf("%v %v", count, inflector.Pluralize(desc)))
+			}
+		}
+		buf := &bytes.Buffer{}
+		for i := 0; i < len(result); i++ {
+			fmt.Fprint(buf, result[i])
+			if i < len(result)-2 {
+				fmt.Fprint(buf, ", ")
+			} else if i < len(result)-1 {
+				fmt.Fprint(buf, ", and ")
+			}
+		}
+		return buf.String()
+	}
+	return fmt.Sprintf("%v %v", lang.Art(fmt.Sprint(item)), item)
+}
 
 func Success(m interfaces.MCP, err *messages.Error) bool {
 	if err == nil {

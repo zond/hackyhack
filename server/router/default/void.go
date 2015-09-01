@@ -1,8 +1,6 @@
 package main
 
 import (
-	"strings"
-
 	"github.com/zond/hackyhack/client/util"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/messages"
@@ -29,7 +27,7 @@ func (h *handler) GetLongDesc(viewerId string) (string, *messages.Error) {
 	if err != nil {
 		return "", err
 	}
-	return util.Sprintf("The infinite darkness of space.\n\n%v", strings.Join(contentDescs, "\n")), nil
+	return util.Sprintf("The infinite darkness of space.\n\n%v", util.Enumerate(contentDescs)), nil
 }
 
 func main() {
