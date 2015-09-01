@@ -45,10 +45,30 @@ func GetContainer(m interfaces.MCP) (string, *messages.Error) {
 func GetContent(m interfaces.MCP) ([]string, *messages.Error) {
 	var content []string
 	var merr *messages.Error
-	if err := m.Call(m.GetResource(), messages.MethodSendToClient, nil, &[]interface{}{&content, &merr}); err != nil {
+	if err := m.Call(m.GetResource(), messages.MethodGetContent, nil, &[]interface{}{&content, &merr}); err != nil {
 		return nil, fatality(m, err)
 	}
 	return content, fatality(m, merr)
+}
+
+func GetContentDescs(m interfaces.MCP) ([]string, *messages.Error) {
+	content, err := GetContent(m)
+	if err != nil {
+		return nil, fatality(m, err)
+	}
+	result := []string{}
+	for _, item := range content {
+		var desc string
+		var merr *messages.Error
+		if err := m.Call(item, messages.MethodGetShortDesc, []interface{}{m.GetResource()}, &[]interface{}{&desc, &merr}); err != nil {
+			return nil, fatality(m, err)
+		}
+		if merr != nil {
+			return nil, fatality(m, merr)
+		}
+		result = append(result, desc)
+	}
+	return result, nil
 }
 
 func SendToClient(m interfaces.MCP, msg string) *messages.Error {

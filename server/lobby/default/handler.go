@@ -46,8 +46,8 @@ func (h *handler) HandleClientInput(s string) *messages.Error {
 	return nil
 }
 
-func (h *handler) GetShortDesc(viewerId string) string {
-	return "anonymous"
+func (h *handler) GetShortDesc(viewerId string) (string, *messages.Error) {
+	return "anonymous", nil
 }
 
 func main() {

@@ -13,11 +13,15 @@ type Server struct {
 	router    *router.Router
 }
 
-func New(p *persist.Persister) *Server {
+func New(p *persist.Persister) (*Server, error) {
+	r, err := router.New(p)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
 		persister: p,
-		router:    router.New(p),
-	}
+		router:    r,
+	}, nil
 }
 
 func (s *Server) Serve(l net.Listener) error {

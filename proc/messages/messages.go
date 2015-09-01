@@ -3,6 +3,10 @@ package messages
 import "fmt"
 
 const (
+	VoidResource = "0"
+)
+
+const (
 	MethodGetContainer = "GetContainer"
 	MethodGetContent   = "GetContent"
 	MethodSendToClient = "SendToClient"

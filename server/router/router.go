@@ -1,8 +1,13 @@
 package router
 
 import (
+	"crypto/sha1"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/zond/hackyhack/proc"
@@ -11,8 +16,18 @@ import (
 	"github.com/zond/hackyhack/server/persist"
 	"github.com/zond/hackyhack/server/resource"
 	"github.com/zond/hackyhack/server/router/validator"
-	"github.com/zond/hackyhack/server/void"
 )
+
+var initialVoid string
+
+func init() {
+	path := filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "zond", "hackyhack", "server", "router", "default", "void.go")
+	b, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Fatalf("Unable to load default void file %q: %v", path, err)
+	}
+	initialVoid = string(b)
+}
 
 type resourceWrapper struct {
 	router   *Router
@@ -65,17 +80,36 @@ type Router struct {
 	persister *persist.Persister
 	handlers  map[string]*mcp.MCP
 	lock      sync.RWMutex
-	void      *void.Void
 	clients   map[string]Client
 }
 
-func New(p *persist.Persister) *Router {
-	return &Router{
+func New(p *persist.Persister) (*Router, error) {
+	void := &resource.Resource{}
+	if err := p.Get(messages.VoidResource, void); err == persist.ErrNotFound {
+		void.Id = messages.VoidResource
+		void.Code = initialVoid
+		if err := p.Put(messages.VoidResource, void); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	r := &Router{
 		persister: p,
 		handlers:  map[string]*mcp.MCP{},
-		void:      void.New(p),
 		clients:   map[string]Client{},
 	}
+
+	m, err := r.MCP(messages.VoidResource)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = m.Construct(messages.VoidResource); err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 func (r *Router) RegisterClient(resource string, client Client) {
@@ -107,9 +141,6 @@ func (r *Router) findResource(source, id string) (interface{}, error) {
 		}
 		return result, nil
 	}
-	if id == "" {
-		return r.void, nil
-	}
 	res := &resource.Resource{}
 	if err := r.persister.Get(id, res); err != nil {
 		return nil, err
@@ -123,14 +154,7 @@ func (r *Router) findResource(source, id string) (interface{}, error) {
 	}, nil
 }
 
-func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
-	res := &resource.Resource{}
-	if err := r.persister.Get(resourceId, res); err != nil {
-		return nil, err
-	}
-	if err := validator.Validate(res.Code); err != nil {
-		return nil, err
-	}
+func (r *Router) createMCP(res *resource.Resource, codeHash string) (*mcp.MCP, error) {
 	m, err := mcp.New(res.Code, r.findResource)
 	if err != nil {
 		return nil, err
@@ -141,7 +165,7 @@ func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	existingM, found := r.handlers[resourceId]
+	existingM, found := r.handlers[codeHash]
 	if found {
 		if err := m.Stop(); err != nil {
 			log.Fatal(err)
@@ -149,16 +173,29 @@ func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
 		return existingM, nil
 	}
 
-	r.handlers[resourceId] = m
+	r.handlers[codeHash] = m
 	return m, nil
 }
 
 func (r *Router) MCP(resourceId string) (*mcp.MCP, error) {
+	res := &resource.Resource{}
+	if err := r.persister.Get(resourceId, res); err != nil {
+		return nil, err
+	}
+	if err := validator.Validate(res.Code); err != nil {
+		return nil, err
+	}
+	codeHash := sha1.New()
+	if _, err := io.WriteString(codeHash, res.Code); err != nil {
+		return nil, err
+	}
+	sum := string(codeHash.Sum(nil))
+
 	r.lock.RLock()
-	m, found := r.handlers[resourceId]
+	m, found := r.handlers[sum]
 	r.lock.RUnlock()
 	if !found {
-		return r.createMCP(resourceId)
+		return r.createMCP(res, sum)
 	}
 	return m, nil
 }

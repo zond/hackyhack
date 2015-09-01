@@ -57,27 +57,21 @@ func (m *Mem) Put(kind, key string, value interface{}) error {
 	return nil
 }
 
-func (m *Mem) matches(filterType reflect.Type, filterVal, val reflect.Value) bool {
-	for i := 0; i < filterType.NumField(); i++ {
-		filterField := filterVal.Field(i)
-		filterStructField := filterType.Field(i)
-		if filterField.Interface() != reflect.Zero(filterStructField.Type).Interface() {
-			field := val.FieldByName(filterStructField.Name)
-			if !field.IsValid() {
-				return false
-			}
-			if field.Interface() != filterVal.Field(i).Interface() {
-				return false
-			}
+func (m *Mem) matches(filter *F, val reflect.Value) bool {
+	for name, wanted := range filter.m {
+		field := val.FieldByName(name)
+		if !field.IsValid() {
+			return false
+		}
+		if field.Interface() != wanted {
+			return false
 		}
 	}
 	return true
 }
 
-func (m *Mem) Find(kind string, filter, result interface{}) error {
+func (m *Mem) Find(kind string, filter *F, result interface{}) error {
 	resultVal := reflect.ValueOf(result).Elem()
-	filterVal := reflect.ValueOf(filter)
-	filterType := filterVal.Type()
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 	for k, v := range m.m {
@@ -86,7 +80,7 @@ func (m *Mem) Find(kind string, filter, result interface{}) error {
 			if vVal.Type() != resultVal.Type().Elem() {
 				return fmt.Errorf("Incompatible types; %v and %v", vVal.Type(), resultVal.Type().Elem())
 			}
-			if m.matches(filterType, filterVal, vVal) {
+			if m.matches(filter, vVal) {
 				resultVal.Set(reflect.Append(resultVal, vVal))
 			}
 		}

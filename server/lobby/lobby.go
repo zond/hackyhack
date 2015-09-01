@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/zond/gosafe"
+	"github.com/zond/hackyhack/proc/messages"
 	"github.com/zond/hackyhack/server/persist"
 	"github.com/zond/hackyhack/server/resource"
 	"github.com/zond/hackyhack/server/user"
@@ -90,10 +91,19 @@ func (l *Lobby) HandleClientInput(s string) error {
 					return err
 				}
 				r := &resource.Resource{
-					Id:   l.user.Resource,
-					Code: initialHandler,
+					Id:        l.user.Resource,
+					Code:      initialHandler,
+					Container: messages.VoidResource,
 				}
 				if err := p.Put(r.Id, r); err != nil {
+					return err
+				}
+				voidRes := &resource.Resource{}
+				if err := p.Get(messages.VoidResource, voidRes); err != nil {
+					return err
+				}
+				voidRes.Content = append(voidRes.Content, r.Id)
+				if err := p.Put(messages.VoidResource, voidRes); err != nil {
 					return err
 				}
 				return nil
@@ -119,9 +129,9 @@ login USERNAME PASSWORD
 `)
 		} else {
 			users := []user.User{}
-			if err := l.persister.Find(user.User{
+			if err := l.persister.Find(persist.NewF(user.User{
 				Username: match[1],
-			}, &users); err != nil {
+			}).Add("Username"), &users); err != nil {
 				return err
 			}
 			if len(users) == 0 {
