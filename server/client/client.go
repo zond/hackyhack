@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strings"
 
@@ -75,12 +76,12 @@ func (c *Client) Authorize(user *user.User) error {
 	return nil
 }
 
-func (c *Client) Handle(conn net.Conn) error {
+func (c *Client) Handle(conn net.Conn) {
 	c.conn = conn
 	c.reader = bufio.NewReader(conn)
 	lobby := lobby.New(c.persister, c)
 	if err := lobby.Welcome(); err != nil {
-		return err
+		log.Print(err)
 	}
 	c.handler = lobby
 	defer c.handler.UnregisterClient()
@@ -94,5 +95,7 @@ func (c *Client) Handle(conn net.Conn) error {
 	if err == io.EOF {
 		err = nil
 	}
-	return err
+	if err != nil {
+		log.Print(err)
+	}
 }

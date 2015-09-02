@@ -2,6 +2,7 @@ package router
 
 import (
 	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -154,7 +155,7 @@ func (r *Router) findResource(source, id string) (interface{}, error) {
 	}, nil
 }
 
-func (r *Router) createMCP(res *resource.Resource, codeHash string) (*mcp.MCP, error) {
+func (r *Router) createMCP(res *resource.Resource, key string) (*mcp.MCP, error) {
 	m, err := mcp.New(res.Code, r.findResource)
 	if err != nil {
 		return nil, err
@@ -165,7 +166,7 @@ func (r *Router) createMCP(res *resource.Resource, codeHash string) (*mcp.MCP, e
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	existingM, found := r.handlers[codeHash]
+	existingM, found := r.handlers[key]
 	if found {
 		if err := m.Stop(); err != nil {
 			log.Fatal(err)
@@ -173,7 +174,7 @@ func (r *Router) createMCP(res *resource.Resource, codeHash string) (*mcp.MCP, e
 		return existingM, nil
 	}
 
-	r.handlers[codeHash] = m
+	r.handlers[key] = m
 	return m, nil
 }
 
@@ -189,13 +190,13 @@ func (r *Router) MCP(resourceId string) (*mcp.MCP, error) {
 	if _, err := io.WriteString(codeHash, res.Code); err != nil {
 		return nil, err
 	}
-	sum := string(codeHash.Sum(nil))
+	key := fmt.Sprintf("%s.%s", res.Owner, base64.StdEncoding.EncodeToString(codeHash.Sum(nil)))
 
 	r.lock.RLock()
-	m, found := r.handlers[sum]
+	m, found := r.handlers[key]
 	r.lock.RUnlock()
 	if !found {
-		return r.createMCP(res, sum)
+		return r.createMCP(res, key)
 	}
 	return m, nil
 }

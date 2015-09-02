@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -40,6 +41,7 @@ func init() {
 	setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{RLIMIT_FSIZE, RLIMIT_FSIZE})
 	setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{RLIMIT_NOFILE, RLIMIT_NOFILE})
 	setrlimit(syscall.RLIMIT_STACK, &syscall.Rlimit{RLIMIT_STACK, RLIMIT_STACK})
+	runtime.GOMAXPROCS(1)
 }
 
 var (

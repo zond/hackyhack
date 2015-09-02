@@ -31,8 +31,6 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 		client := client.New(s.persister, s.router)
-		if err := client.Handle(conn); err != nil {
-			return err
-		}
+		go client.Handle(conn)
 	}
 }
