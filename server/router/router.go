@@ -81,25 +81,32 @@ type Router struct {
 	persister *persist.Persister
 	handlers  map[string]*mcp.MCP
 	lock      sync.RWMutex
-	clients   map[string]Client
+	clients   map[string]*clientWrapper
+}
+
+func (r *Router) ensureVoid() error {
+	void := &resource.Resource{}
+	if err := r.persister.Get(messages.VoidResource, void); err == persist.ErrNotFound {
+		void.Id = messages.VoidResource
+		void.Code = initialVoid
+		if err := r.persister.Put(messages.VoidResource, void); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	return nil
 }
 
 func New(p *persist.Persister) (*Router, error) {
-	void := &resource.Resource{}
-	if err := p.Get(messages.VoidResource, void); err == persist.ErrNotFound {
-		void.Id = messages.VoidResource
-		void.Code = initialVoid
-		if err := p.Put(messages.VoidResource, void); err != nil {
-			return nil, err
-		}
-	} else if err != nil {
-		return nil, err
-	}
-
 	r := &Router{
 		persister: p,
 		handlers:  map[string]*mcp.MCP{},
-		clients:   map[string]Client{},
+		clients:   map[string]*clientWrapper{},
+	}
+
+	if err := r.ensureVoid(); err != nil {
+		return nil, err
 	}
 
 	m, err := r.MCP(messages.VoidResource)
@@ -116,7 +123,13 @@ func New(p *persist.Persister) (*Router, error) {
 func (r *Router) RegisterClient(resource string, client Client) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	r.clients[resource] = client
+	r.clients[resource] = &clientWrapper{
+		resourceWrapper: resourceWrapper{
+			resource: resource,
+			router:   r,
+		},
+		client: client,
+	}
 }
 
 func (r *Router) UnregisterClient(resource string) {
@@ -127,18 +140,15 @@ func (r *Router) UnregisterClient(resource string) {
 
 func (r *Router) findResource(source, id string) (interface{}, error) {
 	if id == source {
-		result := &resourceWrapper{
-			resource: id,
-			router:   r,
-		}
 		r.lock.RLock()
 		client, found := r.clients[id]
 		r.lock.RUnlock()
 		if found {
-			return &clientWrapper{
-				resourceWrapper: *result,
-				client:          client,
-			}, nil
+			return client, nil
+		}
+		result := &resourceWrapper{
+			resource: id,
+			router:   r,
 		}
 		return result, nil
 	}

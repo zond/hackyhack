@@ -91,19 +91,11 @@ func (l *Lobby) HandleClientInput(s string) error {
 					return err
 				}
 				r := &resource.Resource{
-					Id:        l.user.Resource,
-					Code:      initialHandler,
-					Container: messages.VoidResource,
+					Id:    l.user.Resource,
+					Owner: l.user.Resource,
+					Code:  initialHandler,
 				}
 				if err := p.Put(r.Id, r); err != nil {
-					return err
-				}
-				voidRes := &resource.Resource{}
-				if err := p.Get(messages.VoidResource, voidRes); err != nil {
-					return err
-				}
-				voidRes.Content = append(voidRes.Content, r.Id)
-				if err := p.Put(messages.VoidResource, voidRes); err != nil {
 					return err
 				}
 				return nil
@@ -137,9 +129,10 @@ login USERNAME PASSWORD
 			if len(users) == 0 {
 				l.state = createUser
 				l.user = &user.User{
-					Username: match[1],
-					Password: match[2],
-					Resource: fmt.Sprintf("%x%x", rand.Int63(), rand.Int63()),
+					Username:  match[1],
+					Password:  match[2],
+					Resource:  fmt.Sprintf("%x%x", rand.Int63(), rand.Int63()),
+					Container: messages.VoidResource,
 				}
 				return l.client.Send(`
 User not found, create? (y/n)

@@ -51,6 +51,7 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 	}
 
 	if proxy, ok := resource.(ResourceProxy); ok {
+		id := request.Header.Id
 		response, err := proxy.SendRequest(request)
 		if err != nil {
 			return emitter.Error(request, &messages.Error{
@@ -58,6 +59,7 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 				Code:    messages.ErrorCodeProxyFailed,
 			})
 		}
+		response.Header.Id = id
 
 		return emitter(&messages.Blob{
 			Type:     messages.BlobTypeResponse,

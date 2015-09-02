@@ -125,6 +125,8 @@ func (m *MCP) Construct(resource string) (bool, error) {
 }
 
 func (m *MCP) SendRequest(request *messages.Request) (*messages.Response, error) {
+	request.Header.Id = fmt.Sprint("%v", atomic.AddUint64(&nextRequestId, 1))
+
 	flying := &flyingRequest{
 		resourceId: request.Resource,
 	}
@@ -151,7 +153,7 @@ func (m *MCP) Call(source, resource, meth string, params, results interface{}) e
 
 	request := &messages.Request{
 		Header: messages.RequestHeader{
-			Id: fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
+			Source: source,
 		},
 		Resource: resource,
 		Method:   meth,

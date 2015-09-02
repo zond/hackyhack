@@ -12,6 +12,7 @@ import (
 	"github.com/zond/hackyhack/proc/messages"
 	"github.com/zond/hackyhack/server/lobby"
 	"github.com/zond/hackyhack/server/persist"
+	"github.com/zond/hackyhack/server/resource"
 	"github.com/zond/hackyhack/server/router"
 	"github.com/zond/hackyhack/server/user"
 )
@@ -25,7 +26,6 @@ type Client struct {
 	persister *persist.Persister
 	router    *router.Router
 	conn      net.Conn
-	reader    *bufio.Reader
 	handler   Handler
 }
 
@@ -56,6 +56,14 @@ func (m *mcpHandler) HandleClientInput(s string) error {
 }
 
 func (m *mcpHandler) UnregisterClient() {
+	res := &resource.Resource{}
+	if err := m.client.persister.Get(m.user.Resource, res); err != nil {
+		log.Print(err)
+	} else {
+		if err := res.Remove(m.client.persister); err != nil {
+			log.Print(err)
+		}
+	}
 	m.client.router.UnregisterClient(m.user.Resource)
 }
 
@@ -71,31 +79,40 @@ func (c *Client) Authorize(user *user.User) error {
 	if _, err = handler.m.Construct(user.Resource); err != nil {
 		return err
 	}
+
+	res := &resource.Resource{}
+	if err := c.persister.Get(user.Resource, res); err != nil {
+		return err
+	}
+	if err := res.MoveTo(c.persister, user.Container); err != nil {
+		return err
+	}
+
 	c.handler = handler
 	c.router.RegisterClient(user.Resource, c)
 	return nil
 }
 
+func (c *Client) unregisterClient() {
+	c.handler.UnregisterClient()
+}
+
 func (c *Client) Handle(conn net.Conn) {
 	c.conn = conn
-	c.reader = bufio.NewReader(conn)
+	scanner := bufio.NewScanner(c.conn)
 	lobby := lobby.New(c.persister, c)
 	if err := lobby.Welcome(); err != nil {
 		log.Print(err)
 	}
 	c.handler = lobby
-	defer c.handler.UnregisterClient()
-	line, err := c.reader.ReadString('\n')
-	for ; err == nil; line, err = c.reader.ReadString('\n') {
-		line = strings.TrimSpace(line)
+	defer c.unregisterClient()
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if e := c.handler.HandleClientInput(line); e != nil {
 			c.Send(fmt.Sprintf("%v\n", e.Error()))
 		}
 	}
-	if err == io.EOF {
-		err = nil
-	}
-	if err != nil {
-		log.Print(err)
+	if scanner.Err() != io.EOF {
+		log.Print(scanner.Err())
 	}
 }
