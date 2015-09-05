@@ -7,6 +7,7 @@ import (
 	"log"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -139,31 +140,189 @@ func Capitalize(s string) string {
 	return strings.ToUpper(string([]rune(s)[0:1])) + s[1:]
 }
 
-func ShortDescMap(m interfaces.MCP) (map[string]string, *messages.Error) {
+func GetContentShortDescMap(m interfaces.MCP, resource string) (map[string]string, *messages.Error) {
 	result := map[string]string{}
-	result[m.GetResource()] = "me"
+
+	content, err := GetContent(m, resource)
+	if err != nil {
+		if IsNoSuchMethod(err) {
+			err = nil
+		} else {
+			return nil, err
+		}
+	}
+	descs, err := GetShortDescs(m, content)
+	if err != nil {
+		return nil, err
+	}
+	for index, resource := range content {
+		result[resource] = descs[index]
+	}
 
 	return result, nil
 }
 
-func Identify(m interfaces.MCP, what string) (resource string, found bool, err *messages.Error) {
-	if what == "me" {
-		return m.GetResource(), true, nil
+func GetShortDescMap(m interfaces.MCP, resource string) (map[string]string, *messages.Error) {
+	result, err := GetContentShortDescMap(m, resource)
+	if err != nil {
+		return nil, err
 	}
-	return "", false, nil
+
+	container, err := GetContainer(m, resource)
+	if err != nil {
+		return nil, err
+	}
+
+	containerShortDesc, err := GetShortDesc(m, container)
+	if err != nil {
+		return nil, err
+	}
+	result[container] = containerShortDesc
+
+	containerShortDescMap, err := GetContentShortDescMap(m, container)
+	if err != nil {
+		return nil, err
+	}
+	for resource, desc := range containerShortDescMap {
+		result[resource] = desc
+	}
+
+	result["me"] = resource
+
+	return result, nil
+}
+
+func Identify(m interfaces.MCP, what string) (mathes []string, err *messages.Error) {
+	what = strings.ToLower(what)
+
+	shortDescMap, err := GetShortDescMap(m, m.GetResource())
+	if err != nil {
+		return nil, err
+	}
+
+	// Exact match ("take rock")
+	matches := []string{}
+	for resource, desc := range shortDescMap {
+		if strings.HasPrefix(strings.ToLower(desc), what) {
+			matches = append(matches, resource)
+		}
+	}
+
+	// Number suffix ("take rock 2")
+	if len(matches) != 1 {
+		found, num, prefix := SplitEndNumber(what)
+		if found {
+			newMatches := []string{}
+			for resource, desc := range shortDescMap {
+				if strings.HasPrefix(strings.ToLower(desc), prefix) {
+					newMatches = append(newMatches, resource)
+				}
+			}
+			if len(newMatches) <= num && len(newMatches) > 0 {
+				matches = []string{newMatches[num-1]}
+			}
+		}
+	}
+
+	// Inside match ("take [large] rock")
+	if len(matches) == 0 {
+		newMatches := []string{}
+		for resource, desc := range shortDescMap {
+			parts := SplitWhitespace(desc)
+			for _, part := range parts {
+				if strings.HasPrefix(strings.ToLower(part), what) {
+					newMatches = append(newMatches, resource)
+				}
+			}
+			if len(newMatches) > 0 {
+				matches = newMatches
+			}
+		}
+	}
+
+	// Inside number suffix ("take [large] rock 2")
+	if len(matches) != 1 {
+		found, num, prefix := SplitEndNumber(what)
+		if found {
+			newMatches := []string{}
+			for resource, desc := range shortDescMap {
+				parts := SplitWhitespace(desc)
+				for _, part := range parts {
+					if strings.HasPrefix(strings.ToLower(part), prefix) {
+						newMatches = append(newMatches, resource)
+					}
+				}
+				if len(newMatches) <= num && len(newMatches) > 0 {
+					matches = []string{newMatches[num-1]}
+				}
+			}
+		}
+	}
+
+	return matches, nil
 }
 
 const (
-	splitStateVerb = iota
+	splitStateNone = iota
+	splitStateVerb
+	splitStateNum
 	splitStateWhite
 	splitStateRest
 )
+
+func Reverse(s string) string {
+	runes := make([]rune, len(s))
+	for n, r := range s {
+		runes[n] = r
+	}
+	for i := 0; i < len(s)/2; i++ {
+		runes[i], runes[len(s)-1-i] = runes[len(s)-1-i], runes[i]
+	}
+	return string(runes)
+}
+
+func SplitEndNumber(source string) (found bool, num int, prefix string) {
+	rev := Reverse(source)
+
+	state := splitStateNone
+	numBuf := &bytes.Buffer{}
+	prefixBuf := &bytes.Buffer{}
+	for _, r := range rev {
+		switch state {
+		case splitStateNone:
+			if unicode.IsDigit(r) {
+				io.WriteString(numBuf, string([]rune{r}))
+			} else if unicode.IsSpace(r) {
+				state = splitStateWhite
+			} else {
+				return false, 0, source
+			}
+		case splitStateWhite:
+			if !unicode.IsSpace(r) {
+				state = splitStateRest
+				io.WriteString(prefixBuf, string([]rune{r}))
+			}
+		case splitStateRest:
+			io.WriteString(prefixBuf, string([]rune{r}))
+		}
+	}
+
+	numStr := Reverse(numBuf.String())
+	prefix = Reverse(prefixBuf.String())
+
+	var err error
+	if num, err = strconv.Atoi(numStr); err != nil {
+		return false, 0, source
+	}
+
+	return true, num, prefix
+}
 
 func SplitVerb(s string) (verb, rest string) {
 	state := splitStateVerb
 	verbBuf := &bytes.Buffer{}
 	restBuf := &bytes.Buffer{}
-	for _, r := range []rune(s) {
+	for _, r := range s {
 		switch state {
 		case splitStateVerb:
 			if unicode.IsSpace(r) {
