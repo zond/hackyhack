@@ -25,21 +25,15 @@ func New(m interfaces.MCP) interfaces.Describable {
 }
 
 func (h *handler) HandleClientInput(s string) *messages.Error {
-	parts := util.SplitWhitespace(s)
-	if len(parts) == 0 {
-		return nil
-	}
+	verb, rest := util.SplitVerb(s)
 
-	var params []string
-	if len(parts) > 1 {
-		params = parts[1:]
-	}
+	if verb != "" {
+		cmd := util.Capitalize(verb)
 
-	cmd := util.Capitalize(parts[0])
-
-	if err := h.ch.Call(cmd, params, nil); err != nil {
-		return &messages.Error{
-			Message: err.Error(),
+		if err := h.ch.Call(cmd, []string{rest}, nil); err != nil {
+			return &messages.Error{
+				Message: err.Error(),
+			}
 		}
 	}
 

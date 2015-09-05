@@ -3,10 +3,12 @@ package util
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"reflect"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/gedex/inflector"
 	"github.com/zond/hackyhack/lang"
@@ -148,4 +150,36 @@ func SplitWhitespace(s string) []string {
 
 func Capitalize(s string) string {
 	return strings.ToUpper(string([]rune(s)[0:1])) + s[1:]
+}
+
+const (
+	splitStateVerb = iota
+	splitStateWhite
+	splitStateRest
+)
+
+func SplitVerb(s string) (verb, rest string) {
+	state := splitStateVerb
+	verbBuf := &bytes.Buffer{}
+	restBuf := &bytes.Buffer{}
+	for _, r := range []rune(s) {
+		switch state {
+		case splitStateVerb:
+			if unicode.IsSpace(r) {
+				state = splitStateWhite
+			} else {
+				io.WriteString(verbBuf, string([]rune{r}))
+			}
+		case splitStateWhite:
+			if !unicode.IsSpace(r) {
+				state = splitStateRest
+				io.WriteString(restBuf, string([]rune{r}))
+			}
+		case splitStateRest:
+			io.WriteString(restBuf, string([]rune{r}))
+		}
+	}
+	verb = verbBuf.String()
+	rest = restBuf.String()
+	return
 }

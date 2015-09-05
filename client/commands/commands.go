@@ -12,7 +12,7 @@ type Default struct {
 	M interfaces.MCP
 }
 
-func (d *Default) L() {
+func (d *Default) L(x string) {
 	containerId, err := util.GetContainer(d.M)
 	if err != nil {
 		return
