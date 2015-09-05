@@ -138,20 +138,24 @@ func (r *Router) UnregisterClient(resource string) {
 	delete(r.clients, resource)
 }
 
-func (r *Router) findResource(source, id string) (interface{}, error) {
+func (r *Router) findResource(source, id string) ([]interface{}, error) {
+	var result []interface{}
+
 	if id == source {
 		r.lock.RLock()
 		client, found := r.clients[id]
 		r.lock.RUnlock()
 		if found {
-			return client, nil
+			result = append(result, client)
+		} else {
+			wrapper := &resourceWrapper{
+				resource: id,
+				router:   r,
+			}
+			result = append(result, wrapper)
 		}
-		result := &resourceWrapper{
-			resource: id,
-			router:   r,
-		}
-		return result, nil
 	}
+
 	res := &resource.Resource{}
 	if err := r.persister.Get(id, res); err != nil {
 		return nil, err
@@ -160,9 +164,11 @@ func (r *Router) findResource(source, id string) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return proc.ResourceProxy{
+	result = append(result, proc.ResourceProxy{
 		SendRequest: m.SendRequest,
-	}, nil
+	})
+
+	return result, nil
 }
 
 func (r *Router) createMCP(res *resource.Resource, key string) (*mcp.MCP, error) {

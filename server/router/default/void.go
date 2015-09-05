@@ -18,16 +18,16 @@ func New(m interfaces.MCP) interfaces.Describable {
 	return h
 }
 
-func (h *handler) GetShortDesc(viewerId string) (string, *messages.Error) {
+func (h *handler) GetShortDesc() (string, *messages.Error) {
 	return "the Void", nil
 }
 
-func (h *handler) GetLongDesc(viewerId string) (string, *messages.Error) {
-	contentDescs, err := util.GetContentDescs(h.m)
-	if err != nil {
-		return "", err
-	}
-	return util.Sprintf("The infinite darkness of space.\n\n%v", util.Enumerate(contentDescs)), nil
+func (h *handler) GetLongDesc() (string, *messages.Error) {
+	return "The infinite darkness of space.", nil
+}
+
+func (h *handler) GetContent() ([]string, *messages.Error) {
+	return util.GetContent(h.m, h.m.GetResource())
 }
 
 func main() {

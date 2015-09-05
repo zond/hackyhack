@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"log"
-
 	"github.com/zond/hackyhack/client/util"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/messages"
@@ -12,19 +10,31 @@ type Default struct {
 	M interfaces.MCP
 }
 
-func (d *Default) L(x string) {
-	containerId, err := util.GetContainer(d.M)
+func (d *Default) Edit(what string) {
+
+}
+
+func (d *Default) L(x string) *messages.Error {
+	containerId, err := util.GetContainer(d.M, d.M.GetResource())
 	if err != nil {
-		return
+		return err
 	}
-	var desc string
-	if util.Success(d.M, d.M.Call(containerId, messages.MethodGetLongDesc, []string{d.M.GetResource()}, &[]interface{}{&desc})) {
-		util.SendToClient(d.M, util.Sprintf("%v\n", desc))
-		return
+	desc, err := util.GetLongDesc(d.M, containerId)
+	if err != nil {
+		if util.IsNoSuchMethod(err) {
+			desc, err = util.GetShortDesc(d.M, containerId)
+		}
+		if err != nil {
+			return err
+		}
 	}
-	if util.Success(d.M, d.M.Call(containerId, messages.MethodGetShortDesc, []string{d.M.GetResource()}, &[]interface{}{&desc})) {
-		util.SendToClient(d.M, util.Sprintf("%v\n", desc))
-		return
+	siblings, err := util.GetContent(d.M, containerId)
+	if err != nil && !util.IsNoSuchMethod(err) {
+		return err
 	}
-	log.Fatal("No short or long desc of container found")
+	descs, err := util.GetShortDescs(d.M, siblings)
+	if err != nil {
+		return err
+	}
+	return util.SendToClient(d.M, util.Sprintf("%v\n\n%v\n", desc, util.Enumerate(descs)))
 }

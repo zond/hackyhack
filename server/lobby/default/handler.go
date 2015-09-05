@@ -30,17 +30,21 @@ func (h *handler) HandleClientInput(s string) *messages.Error {
 	if verb != "" {
 		cmd := util.Capitalize(verb)
 
-		if err := h.ch.Call(cmd, []string{rest}, nil); err != nil {
+		var merr *messages.Error
+		if err := h.ch.Call(cmd, []string{rest}, []interface{}{merr}); err != nil {
 			return &messages.Error{
 				Message: err.Error(),
 			}
+		}
+		if merr != nil {
+			return merr
 		}
 	}
 
 	return nil
 }
 
-func (h *handler) GetShortDesc(viewerId string) (string, *messages.Error) {
+func (h *handler) GetShortDesc() (string, *messages.Error) {
 	return "anonymous", nil
 }
 

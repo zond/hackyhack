@@ -58,7 +58,6 @@ func (h *Delegator) verifySlice(
 	typeErrGen func(index int, got reflect.Type, want reflect.Type) error,
 	sliceErr error,
 	lenErr error,
-	wantPtr bool,
 	ptrErr error,
 ) []reflect.Value {
 	result := make([]reflect.Value, wantedLen)
@@ -67,17 +66,13 @@ func (h *Delegator) verifySlice(
 	}
 
 	sliceVal := reflect.ValueOf(slice)
-	if wantPtr {
-		if sliceVal.Kind() != reflect.Ptr {
-			*errs = append(*errs, ptrErr)
-			return result
-		}
-		sliceVal = sliceVal.Elem()
-	}
 	if sliceVal.Kind() == reflect.Slice {
 		if sliceVal.Len() == wantedLen {
 			for i := 0; i < wantedLen; i++ {
 				val := sliceVal.Index(i)
+				if val.Kind() == reflect.Interface {
+					val = val.Elem()
+				}
 				if val.Type().AssignableTo(typeGen(i)) {
 					result[i] = val
 				} else {
@@ -110,11 +105,10 @@ func (h *Delegator) Call(methName string, params, results interface{}) error {
 		newTypeErrorGen("parameter"),
 		ErrParamsNotSlice,
 		ErrWrongNumberOfParams,
-		false,
 		nil,
 	)
 
-	callResults := h.verifySlice(
+	h.verifySlice(
 		results,
 		methType.NumOut(),
 		methType.Out,
@@ -122,7 +116,6 @@ func (h *Delegator) Call(methName string, params, results interface{}) error {
 		newTypeErrorGen("result"),
 		ErrResultsNotPointerToSlice,
 		ErrWrongNumberOfResults,
-		true,
 		ErrResultsNotPointerToSlice,
 	)
 
@@ -132,8 +125,10 @@ func (h *Delegator) Call(methName string, params, results interface{}) error {
 
 	actualResults := methVal.Call(callParams)
 
+	callResults := reflect.ValueOf(results)
+
 	for index := range actualResults {
-		callResults[index].Set(actualResults[index])
+		callResults.Index(index).Set(actualResults[index])
 	}
 
 	return nil

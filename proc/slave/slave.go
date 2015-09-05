@@ -105,14 +105,14 @@ func (s *slaveDriver) logErr(err error) {
 	}
 }
 
-func (s *slaveDriver) findSlave(source, resource string) (interface{}, error) {
+func (s *slaveDriver) findSlave(source, resource string) ([]interface{}, error) {
 	s.slaveLock.RLock()
 	slave, found := s.slaves[resource]
 	s.slaveLock.RUnlock()
 	if !found {
 		return nil, fmt.Errorf("No slave %q found", resource)
 	}
-	return slave, nil
+	return []interface{}{slave}, nil
 }
 
 func (s *slaveDriver) handleRequest(request *messages.Request) {

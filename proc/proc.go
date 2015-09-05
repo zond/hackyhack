@@ -39,10 +39,10 @@ type ResourceProxy struct {
 	SendRequest RequestHandler
 }
 
-type ResourceFinder func(askerId, resourceId string) (interface{}, error)
+type ResourceFinder func(askerId, resourceId string) ([]interface{}, error)
 
 func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *messages.Request) error {
-	resource, err := resourceFinder(request.Header.Source, request.Resource)
+	resources, err := resourceFinder(request.Header.Source, request.Resource)
 	if err != nil {
 		return emitter.Error(request, &messages.Error{
 			Message: err.Error(),
@@ -50,86 +50,98 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 		})
 	}
 
-	if proxy, ok := resource.(ResourceProxy); ok {
-		id := request.Header.Id
-		response, err := proxy.SendRequest(request)
-		if err != nil {
-			return emitter.Error(request, &messages.Error{
-				Message: err.Error(),
-				Code:    messages.ErrorCodeProxyFailed,
-			})
-		}
-		response.Header.Id = id
+	for index, resource := range resources {
+		if proxy, ok := resource.(ResourceProxy); ok {
 
-		return emitter(&messages.Blob{
-			Type:     messages.BlobTypeResponse,
-			Response: response,
-		})
-	}
-
-	resourceVal := reflect.ValueOf(resource)
-
-	m := resourceVal.MethodByName(request.Method)
-	if !m.IsValid() {
-		return emitter.Error(request, &messages.Error{
-			Message: fmt.Sprintf("No method %q found.", request.Method),
-			Code:    messages.ErrorCodeNoSuchMethod,
-		})
-	}
-
-	mt := m.Type()
-	params := make([]interface{}, mt.NumIn())
-	paramVals := make([]reflect.Value, len(params))
-
-	if len(params) > 0 {
-		if err := json.Unmarshal([]byte(request.Parameters), &params); err != nil {
-			return emitter.Error(request, &messages.Error{
-				Message: fmt.Sprintf("json.Unmarshal of parameters failed: %v", err),
-				Code:    messages.ErrorCodeJSONDecodeParameters,
-			})
-		}
-
-		for index := range params {
-			rawJSON, err := json.Marshal(params[index])
+			id := request.Header.Id
+			response, err := proxy.SendRequest(request)
 			if err != nil {
 				return emitter.Error(request, &messages.Error{
-					Message: fmt.Sprintf("json.Marshal of parameter %v failed: %v", index, err),
-					Code:    messages.ErrorCodeJSONDecodeParameters,
+					Message: err.Error(),
+					Code:    messages.ErrorCodeProxyFailed,
 				})
 			}
 
-			val := reflect.New(mt.In(index))
-			if err := json.Unmarshal(rawJSON, val.Interface()); err != nil {
-				emitter.Error(request, &messages.Error{
-					Message: fmt.Sprintf("json.Unmarshal of parameter %v failed: %v", index, err),
-					Code:    messages.ErrorCodeJSONDecodeParameters,
+			if response.Header.Error == nil || response.Header.Error.Code != messages.ErrorCodeNoSuchMethod || index == len(resources)-1 {
+				response.Header.Id = id
+
+				return emitter(&messages.Blob{
+					Type:     messages.BlobTypeResponse,
+					Response: response,
 				})
 			}
-			paramVals[index] = val.Elem()
+
+		} else {
+
+			resourceVal := reflect.ValueOf(resource)
+
+			m := resourceVal.MethodByName(request.Method)
+			if m.IsValid() || index == len(resources)-1 {
+
+				if !m.IsValid() {
+					return emitter.Error(request, &messages.Error{
+						Message: fmt.Sprintf("No method %q found.", request.Method),
+						Code:    messages.ErrorCodeNoSuchMethod,
+					})
+				}
+
+				mt := m.Type()
+				params := make([]interface{}, mt.NumIn())
+				paramVals := make([]reflect.Value, len(params))
+
+				if len(params) > 0 {
+					if err := json.Unmarshal([]byte(request.Parameters), &params); err != nil {
+						return emitter.Error(request, &messages.Error{
+							Message: fmt.Sprintf("json.Unmarshal of parameters failed: %v", err),
+							Code:    messages.ErrorCodeJSONDecodeParameters,
+						})
+					}
+
+					for index := range params {
+						rawJSON, err := json.Marshal(params[index])
+						if err != nil {
+							return emitter.Error(request, &messages.Error{
+								Message: fmt.Sprintf("json.Marshal of parameter %v failed: %v", index, err),
+								Code:    messages.ErrorCodeJSONDecodeParameters,
+							})
+						}
+
+						val := reflect.New(mt.In(index))
+						if err := json.Unmarshal(rawJSON, val.Interface()); err != nil {
+							emitter.Error(request, &messages.Error{
+								Message: fmt.Sprintf("json.Unmarshal of parameter %v failed: %v", index, err),
+								Code:    messages.ErrorCodeJSONDecodeParameters,
+							})
+						}
+						paramVals[index] = val.Elem()
+					}
+				}
+
+				resultVals := m.Call(paramVals)
+				result := make([]interface{}, len(resultVals))
+				for index := range result {
+					result[index] = resultVals[index].Interface()
+				}
+
+				resultBytes, err := json.Marshal(result)
+				if err != nil {
+					return emitter.Error(request, &messages.Error{
+						Message: err.Error(),
+						Code:    messages.ErrorCodeJSONEncodeResult,
+					})
+				}
+
+				return emitter(&messages.Blob{
+					Type: messages.BlobTypeResponse,
+					Response: &messages.Response{
+						Header: messages.ResponseHeader{
+							Id: request.Header.Id,
+						},
+						Result: string(resultBytes),
+					},
+				})
+			}
 		}
 	}
-
-	resultVals := m.Call(paramVals)
-	result := make([]interface{}, len(resultVals))
-	for index := range result {
-		result[index] = resultVals[index].Interface()
-	}
-
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return emitter.Error(request, &messages.Error{
-			Message: err.Error(),
-			Code:    messages.ErrorCodeJSONEncodeResult,
-		})
-	}
-
-	return emitter(&messages.Blob{
-		Type: messages.BlobTypeResponse,
-		Response: &messages.Response{
-			Header: messages.ResponseHeader{
-				Id: request.Header.Id,
-			},
-			Result: string(resultBytes),
-		},
-	})
+	panic("Should never end up here")
 }

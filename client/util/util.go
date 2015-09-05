@@ -16,11 +16,11 @@ import (
 	"github.com/zond/hackyhack/proc/messages"
 )
 
-func Is(item interface{}) string {
-	if val := reflect.ValueOf(item); val.Kind() == reflect.Slice && val.Len() > 1 {
-		return "are"
+func IsNoSuchMethod(err *messages.Error) bool {
+	if err == nil {
+		return false
 	}
-	return "is"
+	return err.Code == messages.ErrorCodeNoSuchMethod
 }
 
 func Enumerate(item interface{}) string {
@@ -53,63 +53,50 @@ func Enumerate(item interface{}) string {
 	return fmt.Sprintf("%v %v", lang.Art(fmt.Sprint(item)), item)
 }
 
-func Success(m interfaces.MCP, err *messages.Error) bool {
-	if err == nil {
-		return true
-	}
-	if err.Code == messages.ErrorCodeNoSuchMethod {
-		return false
-	}
-	if err = SendToClient(m, fmt.Sprintf("%v: %v\n", err.Message, err.Code)); err != nil {
-		log.Fatal(err)
-	}
-	return false
-}
-
-func fatality(m interfaces.MCP, err *messages.Error) *messages.Error {
-	if err == nil {
-		return nil
-	}
-	if err = SendToClient(m, fmt.Sprintf("%v: %v\n", err.Message, err.Code)); err != nil {
-		log.Fatal(err)
-	}
-	return err
-}
-
-func GetContainer(m interfaces.MCP) (string, *messages.Error) {
+func GetContainer(m interfaces.MCP, resource string) (string, *messages.Error) {
 	var container string
 	var merr *messages.Error
-	if err := m.Call(m.GetResource(), messages.MethodGetContainer, nil, &[]interface{}{&container, &merr}); err != nil {
-		return "", fatality(m, err)
+	if err := m.Call(resource, messages.MethodGetContainer, nil, &[]interface{}{&container, &merr}); err != nil {
+		return "", err
 	}
-	return container, fatality(m, merr)
+	return container, merr
 }
 
-func GetContent(m interfaces.MCP) ([]string, *messages.Error) {
+func GetContent(m interfaces.MCP, resource string) ([]string, *messages.Error) {
 	var content []string
 	var merr *messages.Error
-	if err := m.Call(m.GetResource(), messages.MethodGetContent, nil, &[]interface{}{&content, &merr}); err != nil {
-		return nil, fatality(m, err)
+	if err := m.Call(resource, messages.MethodGetContent, nil, &[]interface{}{&content, &merr}); err != nil {
+		return nil, err
 	}
-	return content, fatality(m, merr)
+	return content, merr
 }
 
-func GetContentDescs(m interfaces.MCP) ([]string, *messages.Error) {
-	content, err := GetContent(m)
-	if err != nil {
-		return nil, fatality(m, err)
+func GetLongDesc(m interfaces.MCP, resource string) (string, *messages.Error) {
+	var desc string
+	var merr *messages.Error
+	if err := m.Call(resource, messages.MethodGetLongDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
+		return "", err
 	}
-	result := []string{}
-	for _, item := range content {
-		var desc string
-		var merr *messages.Error
-		if err := m.Call(item, messages.MethodGetShortDesc, []interface{}{m.GetResource()}, &[]interface{}{&desc, &merr}); err != nil {
-			return nil, fatality(m, err)
+	return desc, merr
+}
+
+func GetShortDesc(m interfaces.MCP, resource string) (string, *messages.Error) {
+	var desc string
+	var merr *messages.Error
+	if err := m.Call(resource, messages.MethodGetShortDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
+		return "", err
+	}
+	return desc, merr
+}
+
+func GetShortDescs(m interfaces.MCP, resources []string) ([]string, *messages.Error) {
+	result := make([]string, len(resources))
+	for index, resource := range resources {
+		shortDesc, err := GetShortDesc(m, resource)
+		if err != nil {
+			return nil, err
 		}
-		if merr != nil {
-			return nil, fatality(m, merr)
-		}
-		result = append(result, desc)
+		result[index] = shortDesc
 	}
 	return result, nil
 }
@@ -117,9 +104,9 @@ func GetContentDescs(m interfaces.MCP) ([]string, *messages.Error) {
 func SendToClient(m interfaces.MCP, msg string) *messages.Error {
 	var merr *messages.Error
 	if err := m.Call(m.GetResource(), messages.MethodSendToClient, []string{msg}, &[]interface{}{&merr}); err != nil {
-		return fatality(m, err)
+		return err
 	}
-	return fatality(m, merr)
+	return merr
 }
 
 func Fatal(i ...interface{}) {
@@ -150,6 +137,20 @@ func SplitWhitespace(s string) []string {
 
 func Capitalize(s string) string {
 	return strings.ToUpper(string([]rune(s)[0:1])) + s[1:]
+}
+
+func ShortDescMap(m interfaces.MCP) (map[string]string, *messages.Error) {
+	result := map[string]string{}
+	result[m.GetResource()] = "me"
+
+	return result, nil
+}
+
+func Identify(m interfaces.MCP, what string) (resource string, found bool, err *messages.Error) {
+	if what == "me" {
+		return m.GetResource(), true, nil
+	}
+	return "", false, nil
 }
 
 const (
