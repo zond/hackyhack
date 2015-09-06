@@ -46,6 +46,7 @@ type MCP struct {
 	debugHandler      proc.Outputter
 	resourceFinder    proc.ResourceFinder
 	stopped           int32
+	count             int64
 }
 
 func New(code string, resourceFinder proc.ResourceFinder) (*MCP, error) {
@@ -74,6 +75,10 @@ func New(code string, resourceFinder proc.ResourceFinder) (*MCP, error) {
 	return mcp, nil
 }
 
+func (m *MCP) Count() int64 {
+	return atomic.LoadInt64(&m.count)
+}
+
 func (m *MCP) StderrHandler(f func([]byte)) *MCP {
 	m.stderrHandler = f
 	return m
@@ -95,6 +100,37 @@ type flyingDestruct struct {
 	waitGroup sync.WaitGroup
 	resource  string
 	destruct  *messages.Deconstruct
+}
+
+func (m *MCP) Destruct(resource string) (bool, error) {
+	destruct := &messages.Deconstruct{
+		Resource: resource,
+		Id:       fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
+	}
+
+	flying := &flyingDestruct{
+		resource: resource,
+	}
+
+	flying.waitGroup.Add(1)
+	m.flyingLock.Lock()
+	m.flyingDestructs[destruct.Id] = flying
+	m.flyingLock.Unlock()
+
+	if err := m.emit(&messages.Blob{
+		Type:     messages.BlobTypeDestruct,
+		Destruct: destruct,
+	}); err != nil {
+		return false, err
+	}
+
+	flying.waitGroup.Wait()
+
+	if flying.destruct.Deconstructed {
+		atomic.AddInt64(&m.count, -1)
+	}
+
+	return flying.destruct.Deconstructed, nil
 }
 
 func (m *MCP) Construct(resource string) (bool, error) {
@@ -120,6 +156,10 @@ func (m *MCP) Construct(resource string) (bool, error) {
 	}
 
 	flying.waitGroup.Wait()
+
+	if flying.construct.Deconstructed {
+		atomic.AddInt64(&m.count, 1)
+	}
 
 	return flying.construct.Deconstructed, nil
 }
@@ -282,7 +322,7 @@ func (m *MCP) startProc() error {
 }
 
 func (m *MCP) restart(proc *os.Process) {
-	defer m.debugHandler.Trace("MCP#restart")
+	defer m.debugHandler.Trace("MCP#restart")()
 
 	_, err := proc.Wait()
 	if err != nil {

@@ -2,10 +2,12 @@ package server
 
 import (
 	"net"
+	"net/http"
 
 	"github.com/zond/hackyhack/server/client"
 	"github.com/zond/hackyhack/server/persist"
 	"github.com/zond/hackyhack/server/router"
+	"github.com/zond/hackyhack/server/web"
 )
 
 const (
@@ -15,6 +17,7 @@ const (
 type Server struct {
 	persister *persist.Persister
 	router    *router.Router
+	web       *web.Web
 }
 
 func New(p *persist.Persister) (*Server, error) {
@@ -22,10 +25,16 @@ func New(p *persist.Persister) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{
+	server := &Server{
 		persister: p,
 		router:    r,
-	}, nil
+		web:       web.New(p, r),
+	}
+	return server, nil
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.web.ServeHTTP(w, r)
 }
 
 func (s *Server) ServeLogin(l net.Listener) error {

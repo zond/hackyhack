@@ -78,11 +78,33 @@ func (w *clientWrapper) SendToClient(s string) *messages.Error {
 	return nil
 }
 
+type ownerCode struct {
+	owner    string
+	codeHash string
+}
+
+func newOwnerCode(owner, code string) (ownerCode, error) {
+	codeHash := sha1.New()
+	if _, err := io.WriteString(codeHash, code); err != nil {
+		return ownerCode{}, err
+	}
+	return ownerCode{
+		owner:    owner,
+		codeHash: base64.StdEncoding.EncodeToString(codeHash.Sum(nil)),
+	}, nil
+}
+
+type handlerData struct {
+	oc ownerCode
+	m  *mcp.MCP
+}
+
 type Router struct {
-	persister *persist.Persister
-	handlers  map[string]*mcp.MCP
-	lock      sync.RWMutex
-	clients   map[string]*clientWrapper
+	persister             *persist.Persister
+	handlerByOwnerCode    map[ownerCode]*mcp.MCP
+	handlerDataByResource map[string]handlerData
+	lock                  sync.RWMutex
+	clients               map[string]*clientWrapper
 }
 
 func (r *Router) ensureVoid() error {
@@ -103,9 +125,10 @@ func (r *Router) ensureVoid() error {
 
 func New(p *persist.Persister) (*Router, error) {
 	r := &Router{
-		persister: p,
-		handlers:  map[string]*mcp.MCP{},
-		clients:   map[string]*clientWrapper{},
+		persister:             p,
+		handlerByOwnerCode:    map[ownerCode]*mcp.MCP{},
+		handlerDataByResource: map[string]handlerData{},
+		clients:               map[string]*clientWrapper{},
 	}
 
 	if err := r.ensureVoid(); err != nil {
@@ -141,6 +164,37 @@ func (r *Router) UnregisterClient(resource string) {
 	delete(r.clients, resource)
 }
 
+func (r *Router) Restart(resource string) error {
+	r.lock.RLock()
+	_, found := r.handlerDataByResource[resource]
+	r.lock.RUnlock()
+	if found {
+		r.lock.Lock()
+		defer r.lock.Unlock()
+		hd, found := r.handlerDataByResource[resource]
+		if found {
+			if _, err := hd.m.Destruct(resource); err != nil {
+				return err
+			}
+			delete(r.handlerDataByResource, resource)
+			if hd.m.Count() == 0 {
+				if err := hd.m.Stop(); err != nil {
+					return err
+				}
+				delete(r.handlerByOwnerCode, hd.oc)
+			}
+			m, err := r.MCP(resource)
+			if err != nil {
+				return err
+			}
+			if _, err := m.Construct(resource); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (r *Router) findResource(source, id string) ([]interface{}, error) {
 	var result []interface{}
 
@@ -174,7 +228,7 @@ func (r *Router) findResource(source, id string) ([]interface{}, error) {
 	return result, nil
 }
 
-func (r *Router) createMCP(res *resource.Resource, key string) (*mcp.MCP, error) {
+func (r *Router) createMCP(res *resource.Resource, oc ownerCode) (*mcp.MCP, error) {
 	m, err := mcp.New(res.Code, r.findResource)
 	if err != nil {
 		return nil, err
@@ -182,10 +236,11 @@ func (r *Router) createMCP(res *resource.Resource, key string) (*mcp.MCP, error)
 	if err := m.Start(); err != nil {
 		return nil, err
 	}
+
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	existingM, found := r.handlers[key]
+	existingM, found := r.handlerByOwnerCode[oc]
 	if found {
 		if err := m.Stop(); err != nil {
 			log.Fatal(err)
@@ -193,7 +248,11 @@ func (r *Router) createMCP(res *resource.Resource, key string) (*mcp.MCP, error)
 		return existingM, nil
 	}
 
-	r.handlers[key] = m
+	r.handlerByOwnerCode[oc] = m
+	r.handlerDataByResource[res.Id] = handlerData{
+		oc: oc,
+		m:  m,
+	}
 	return m, nil
 }
 
@@ -205,17 +264,16 @@ func (r *Router) MCP(resourceId string) (*mcp.MCP, error) {
 	if err := validator.Validate(res.Code); err != nil {
 		return nil, err
 	}
-	codeHash := sha1.New()
-	if _, err := io.WriteString(codeHash, res.Code); err != nil {
+	oc, err := newOwnerCode(res.Owner, res.Code)
+	if err != nil {
 		return nil, err
 	}
-	key := fmt.Sprintf("%s.%s", res.Owner, base64.StdEncoding.EncodeToString(codeHash.Sum(nil)))
 
 	r.lock.RLock()
-	m, found := r.handlers[key]
+	m, found := r.handlerByOwnerCode[oc]
 	r.lock.RUnlock()
 	if !found {
-		return r.createMCP(res, key)
+		return r.createMCP(res, oc)
 	}
 	return m, nil
 }
