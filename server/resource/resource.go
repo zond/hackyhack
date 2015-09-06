@@ -1,6 +1,10 @@
 package resource
 
-import "github.com/zond/hackyhack/server/persist"
+import (
+	"time"
+
+	"github.com/zond/hackyhack/server/persist"
+)
 
 type Resource struct {
 	Id        string
@@ -8,6 +12,8 @@ type Resource struct {
 	Code      string
 	Container string
 	Content   []string
+	UpdatedAt time.Time
+	CreatedAt time.Time
 }
 
 func (r *Resource) RemoveContent(resource string) {

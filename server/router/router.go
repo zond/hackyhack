@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/zond/hackyhack/proc"
 	"github.com/zond/hackyhack/proc/mcp"
@@ -89,6 +90,8 @@ func (r *Router) ensureVoid() error {
 	if err := r.persister.Get(messages.VoidResource, void); err == persist.ErrNotFound {
 		void.Id = messages.VoidResource
 		void.Code = initialVoid
+		void.UpdatedAt = time.Now()
+		void.CreatedAt = void.UpdatedAt
 		if err := r.persister.Put(messages.VoidResource, void); err != nil {
 			return err
 		}

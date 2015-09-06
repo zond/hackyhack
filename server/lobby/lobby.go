@@ -90,10 +90,13 @@ func (l *Lobby) HandleClientInput(s string) error {
 				if err := p.Put(l.user.Username, l.user); err != nil {
 					return err
 				}
+				now := time.Now()
 				r := &resource.Resource{
-					Id:    l.user.Resource,
-					Owner: l.user.Resource,
-					Code:  initialHandler,
+					Id:        l.user.Resource,
+					Owner:     l.user.Resource,
+					Code:      initialHandler,
+					UpdatedAt: now,
+					CreatedAt: now,
 				}
 				if err := p.Put(r.Id, r); err != nil {
 					return err
