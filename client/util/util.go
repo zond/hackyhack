@@ -218,7 +218,7 @@ func Identify(m interfaces.MCP, what string) (mathes []string, err *messages.Err
 					newMatches = append(newMatches, resource)
 				}
 			}
-			if len(newMatches) <= num && len(newMatches) > 0 {
+			if len(newMatches) >= num {
 				matches = []string{newMatches[num-1]}
 			}
 		}
@@ -252,7 +252,7 @@ func Identify(m interfaces.MCP, what string) (mathes []string, err *messages.Err
 						newMatches = append(newMatches, resource)
 					}
 				}
-				if len(newMatches) <= num && len(newMatches) > 0 {
+				if len(newMatches) >= num {
 					matches = []string{newMatches[num-1]}
 				}
 			}
