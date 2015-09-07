@@ -172,8 +172,14 @@ func (web *Web) getResource(c *context) error {
 
 func (web *Web) putResource(c *context) error {
 	res := &resource.Resource{}
-	if err := web.persister.Get(c.vars["resource"], res); err != nil {
+	if err := web.persister.Get(c.vars["resource"], res); err == persist.ErrNotFound {
+		return webErr{status: 404, body: err.Error()}
+	} else if err != nil {
 		return err
+	}
+
+	if res.Owner != c.user.Resource {
+		return webErr{status: 403, body: "Not owner"}
 	}
 
 	tmpFileBase := filepath.Join(os.TempDir(), fmt.Sprintf("%x%x", rand.Int63(), rand.Int63()))
