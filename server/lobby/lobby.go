@@ -1,6 +1,7 @@
 package lobby
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"fmt"
 	"io/ioutil"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/zond/gosafe"
@@ -19,7 +21,7 @@ import (
 	"github.com/zond/hackyhack/server/user"
 )
 
-var initialHandler string
+var initialHandlerTmpl *template.Template
 
 func init() {
 	path := filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "zond", "hackyhack", "server", "lobby", "default", "handler.go")
@@ -27,7 +29,7 @@ func init() {
 	if err != nil {
 		log.Fatalf("Unable to load default handler file %q: %v", path, err)
 	}
-	initialHandler = string(b)
+	initialHandlerTmpl = template.Must(template.New("initialHandlerTmpl").Parse(string(b)))
 	rand.Seed(time.Now().UnixNano())
 }
 
@@ -86,6 +88,10 @@ func (l *Lobby) HandleClientInput(s string) error {
 	case createUser:
 		switch strings.ToLower(s) {
 		case "y":
+			codeBuf := &bytes.Buffer{}
+			if err := initialHandlerTmpl.Execute(codeBuf, l.user); err != nil {
+				return err
+			}
 			if err := l.persister.Transact(func(p *persist.Persister) error {
 				if err := p.Put(l.user.Username, l.user); err != nil {
 					return err
@@ -94,7 +100,7 @@ func (l *Lobby) HandleClientInput(s string) error {
 				r := &resource.Resource{
 					Id:        l.user.Resource,
 					Owner:     l.user.Resource,
-					Code:      initialHandler,
+					Code:      codeBuf.String(),
 					UpdatedAt: now,
 					CreatedAt: now,
 				}

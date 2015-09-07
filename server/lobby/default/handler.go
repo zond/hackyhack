@@ -45,7 +45,7 @@ func (h *handler) HandleClientInput(s string) *messages.Error {
 }
 
 func (h *handler) GetShortDesc() (string, *messages.Error) {
-	return "anonymous", nil
+	return "{{.Username}}", nil
 }
 
 func main() {
