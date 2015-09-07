@@ -323,8 +323,6 @@ func (m *MCP) startProc() error {
 }
 
 func (m *MCP) restart(proc *os.Process) {
-	defer m.debugHandler.Trace("MCP#restart")()
-
 	_, err := proc.Wait()
 	if err != nil {
 		m.errHandler(err)
@@ -332,16 +330,16 @@ func (m *MCP) restart(proc *os.Process) {
 	}
 	m.debugHandler("MCP#restart\tchild died")
 
+	if atomic.LoadInt32(&m.stopped) == 1 {
+		return
+	}
+
 	time.Sleep(clientRestartTimeout)
 	if err := m.cleanup(); err != nil {
 		m.errHandler(err)
 		return
 	}
 	m.debugHandler("MCP#restart\tchild cleaned")
-
-	if atomic.LoadInt32(&m.stopped) == 1 {
-		return
-	}
 
 	if err := m.startProc(); err != nil {
 		m.errHandler(err)

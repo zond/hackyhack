@@ -163,23 +163,30 @@ func (r *Router) UnregisterClient(resource string) {
 
 func (r *Router) Restart(resource string) error {
 	r.lock.RLock()
-	_, found := r.handlerDataByResource[resource]
+	hd, found := r.handlerDataByResource[resource]
 	r.lock.RUnlock()
 	if found {
 		r.lock.Lock()
-		defer r.lock.Unlock()
-		hd, found := r.handlerDataByResource[resource]
-		if found {
-			if _, err := hd.m.Destruct(resource); err != nil {
-				return err
-			}
-			delete(r.handlerDataByResource, resource)
-			if hd.m.Count() == 0 {
-				if err := hd.m.Stop(); err != nil {
+		if err := func() error {
+			defer r.lock.Unlock()
+			hd, found = r.handlerDataByResource[resource]
+			if found {
+				if _, err := hd.m.Destruct(resource); err != nil {
 					return err
 				}
-				delete(r.handlerByOwnerCode, hd.oc)
+				delete(r.handlerDataByResource, resource)
+				if hd.m.Count() == 0 {
+					if err := hd.m.Stop(); err != nil {
+						return err
+					}
+					delete(r.handlerByOwnerCode, hd.oc)
+				}
 			}
+			return nil
+		}(); err != nil {
+			return err
+		}
+		if found {
 			m, err := r.MCP(resource)
 			if err != nil {
 				return err

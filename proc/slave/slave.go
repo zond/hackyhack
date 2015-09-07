@@ -224,6 +224,11 @@ func (s *slaveDriver) destruct(d *messages.Deconstruct) {
 		}
 	}
 	s.flyingRequestsLock.Unlock()
+
+	s.emit(&messages.Blob{
+		Type:     messages.BlobTypeDestruct,
+		Destruct: d,
+	})
 }
 
 func (s *slaveDriver) construct(c *messages.Deconstruct) {

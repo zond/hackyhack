@@ -192,8 +192,7 @@ func (web *Web) putResource(c *context) error {
 	}(); err != nil {
 		return err
 	}
-	//	defer os.Remove(tmpFileName)
-	log.Printf("### %v", tmpFileName)
+	defer os.Remove(tmpFileName)
 
 	output, err := exec.Command("goimports", "-w", tmpFileName).CombinedOutput()
 	if err != nil {
