@@ -211,7 +211,7 @@ func Identify(m interfaces.MCP, what string) (mathes []string, err *messages.Err
 	// Number suffix ("take rock 2")
 	if len(matches) != 1 {
 		found, num, prefix := SplitEndNumber(what)
-		if found {
+		if found && num > 0 {
 			newMatches := []string{}
 			for resource, desc := range shortDescMap {
 				if strings.HasPrefix(strings.ToLower(desc), prefix) {
@@ -243,7 +243,7 @@ func Identify(m interfaces.MCP, what string) (mathes []string, err *messages.Err
 	// Inside number suffix ("take [large] rock 2")
 	if len(matches) != 1 {
 		found, num, prefix := SplitEndNumber(what)
-		if found {
+		if found && num > 0 {
 			newMatches := []string{}
 			for resource, desc := range shortDescMap {
 				parts := SplitWhitespace(desc)
