@@ -10,15 +10,15 @@ import (
 )
 
 type handler struct {
-	m  interfaces.MCP
-	ch *delegator.Delegator
+	mcp              interfaces.MCP
+	commandDelegator *delegator.Delegator
 }
 
 func New(m interfaces.MCP) interfaces.Describable {
 	h := &handler{
-		m: m,
+		mcp: m,
 	}
-	h.ch = delegator.New(&commands.Default{
+	h.commandDelegator = delegator.New(&commands.Default{
 		M: m,
 	})
 	return h
@@ -31,7 +31,7 @@ func (h *handler) HandleClientInput(s string) *messages.Error {
 		cmd := util.Capitalize(verb)
 
 		var merr *messages.Error
-		if err := h.ch.Call(cmd, []string{rest}, []interface{}{merr}); err != nil {
+		if err := h.commandDelegator.Call(cmd, []string{rest}, []interface{}{merr}); err != nil {
 			return &messages.Error{
 				Message: err.Error(),
 			}

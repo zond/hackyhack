@@ -12,8 +12,11 @@ const (
 )
 
 var allowedImports = map[string]bool{
-	slave:                                                true,
-	"\"strings\"":                                        true,
+	slave:         true,
+	"\"strings\"": true,
+	"\"regexp\"":  true,
+	"\"strconv\"": true,
+	"\"bytes\"":   true,
 	"\"github.com/zond/hackyhack/client/commands\"":      true,
 	"\"github.com/zond/hackyhack/client/util\"":          true,
 	"\"github.com/zond/hackyhack/proc/interfaces\"":      true,

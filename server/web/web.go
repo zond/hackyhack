@@ -3,6 +3,7 @@ package web
 import (
 	"crypto/hmac"
 	"fmt"
+	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
@@ -22,11 +23,24 @@ import (
 	"github.com/zond/hackyhack/server/user"
 )
 
+var editorTmpl *template.Template
+
 const (
 	realm = "hackyhack"
 )
 
 func init() {
+	editorTmpl = template.Must(template.ParseFiles(filepath.Join(
+		os.Getenv("GOPATH"),
+		"src",
+		"github.com",
+		"zond",
+		"hackyhack",
+		"server",
+		"web",
+		"static",
+		"editor.html",
+	)))
 	rand.Seed(time.Now().UnixNano())
 }
 
@@ -52,22 +66,6 @@ type Web struct {
 	hackRouter *router.Router
 }
 
-func New(p *persist.Persister, r *router.Router) *Web {
-	web := &Web{
-		persister:  p,
-		muxRouter:  mux.NewRouter(),
-		hackRouter: r,
-	}
-	web.muxRouter.Path("/edit/{resource}").Methods("GET").HandlerFunc(web.authenticated(web.editor))
-	web.muxRouter.Path("/{resource}").Methods("GET").HandlerFunc(web.authenticated(web.getResource))
-	web.muxRouter.Path("/{resource}").Methods("PUT").HandlerFunc(web.authenticated(web.putResource))
-	return web
-}
-
-func (web *Web) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	web.muxRouter.ServeHTTP(w, r)
-}
-
 type memRespWriter struct {
 	http.ResponseWriter
 	status int
@@ -86,7 +84,7 @@ func (m *memRespWriter) WriteHeader(i int) {
 	m.ResponseWriter.WriteHeader(i)
 }
 
-func (web *Web) authenticated(f func(*context) error) http.HandlerFunc {
+func (web *Web) log(f func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		memW := &memRespWriter{
 			ResponseWriter: w,
@@ -100,7 +98,39 @@ func (web *Web) authenticated(f func(*context) error) http.HandlerFunc {
 				return fmt.Sprintf("WEB\t%v\t%v\t%v", r.Method, r.URL.String(), memW.status)
 			}
 		})()
+		f(w, r)
+	}
+}
 
+func New(p *persist.Persister, r *router.Router) *Web {
+	web := &Web{
+		persister:  p,
+		muxRouter:  mux.NewRouter(),
+		hackRouter: r,
+	}
+	web.muxRouter.Path("/favicon.ico").HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "Not found", 404) })
+	web.muxRouter.PathPrefix("/static").HandlerFunc(web.log(http.StripPrefix("/static", http.FileServer(http.Dir(filepath.Join(
+		os.Getenv("GOPATH"),
+		"src",
+		"github.com",
+		"zond",
+		"hackyhack",
+		"server",
+		"web",
+		"static",
+	)))).ServeHTTP))
+	web.muxRouter.Path("/edit/{resource}").Methods("GET").HandlerFunc(web.authenticated(web.editor))
+	web.muxRouter.Path("/{resource}").Methods("GET").HandlerFunc(web.authenticated(web.getResource))
+	web.muxRouter.Path("/{resource}").Methods("PUT").HandlerFunc(web.authenticated(web.putResource))
+	return web
+}
+
+func (web *Web) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	web.muxRouter.ServeHTTP(w, r)
+}
+
+func (web *Web) authenticated(f func(*context) error) http.HandlerFunc {
+	return web.log(func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS == nil {
 			newURL := r.URL
 			newURL.Scheme = "https"
@@ -154,11 +184,25 @@ func (web *Web) authenticated(f func(*context) error) http.HandlerFunc {
 			}
 			return
 		}
-	}
+	})
+}
+
+type editorContext struct {
+	Resource *resource.Resource
+	User     *user.User
 }
 
 func (web *Web) editor(c *context) error {
-	return nil
+	res := &resource.Resource{}
+	if err := web.persister.Get(c.vars["resource"], res); err == persist.ErrNotFound {
+		return webErr{status: 404, body: fmt.Sprintf("No such resource")}
+	} else if err != nil {
+		return err
+	}
+	return editorTmpl.Execute(c.resp, editorContext{
+		Resource: res,
+		User:     c.user,
+	})
 }
 
 func (web *Web) getResource(c *context) error {

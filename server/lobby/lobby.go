@@ -14,7 +14,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/zond/gosafe"
 	"github.com/zond/hackyhack/proc/messages"
 	"github.com/zond/hackyhack/server/persist"
 	"github.com/zond/hackyhack/server/resource"
@@ -45,36 +44,18 @@ const (
 	createUser
 )
 
-type gosafeHandler struct {
-	cmd *gosafe.Cmd
-}
-
-func (h *gosafeHandler) Input(s string) error {
-	result, err := h.cmd.Call("input", s)
-	if err != nil {
-		return err
-	}
-	if result != nil {
-		return result.(error)
-	}
-	return nil
-}
-
 type Lobby struct {
 	client    Client
 	persister *persist.Persister
 	state     state
 	user      *user.User
-	compiler  *gosafe.Compiler
 }
 
 func New(p *persist.Persister, c Client) *Lobby {
 	lobby := &Lobby{
 		client:    c,
 		persister: p,
-		compiler:  gosafe.NewCompiler(),
 	}
-	lobby.compiler.Allow("github.com/zond/gosafe/child")
 	return lobby
 }
 
