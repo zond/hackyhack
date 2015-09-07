@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/zond/hackyhack/logging"
 	"github.com/zond/hackyhack/server/persist"
 	"github.com/zond/hackyhack/server/resource"
 	"github.com/zond/hackyhack/server/router"
@@ -66,8 +68,39 @@ func (web *Web) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	web.muxRouter.ServeHTTP(w, r)
 }
 
+type memRespWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (m *memRespWriter) Header() http.Header {
+	return m.ResponseWriter.Header()
+}
+
+func (m *memRespWriter) Write(b []byte) (int, error) {
+	return m.ResponseWriter.Write(b)
+}
+
+func (m *memRespWriter) WriteHeader(i int) {
+	m.status = i
+	m.ResponseWriter.WriteHeader(i)
+}
+
 func (web *Web) authenticated(f func(*context) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		memW := &memRespWriter{
+			ResponseWriter: w,
+			status:         200,
+		}
+		w = memW
+		defer logging.Outputter(log.Printf).Tracef(func(first bool) string {
+			if first {
+				return fmt.Sprintf("WEB\t%v\t%v", r.Method, r.URL.String())
+			} else {
+				return fmt.Sprintf("WEB\t%v\t%v\t%v", r.Method, r.URL.String(), memW.status)
+			}
+		})()
+
 		if r.TLS == nil {
 			newURL := r.URL
 			newURL.Scheme = "https"
@@ -145,16 +178,22 @@ func (web *Web) putResource(c *context) error {
 
 	tmpFileBase := filepath.Join(os.TempDir(), fmt.Sprintf("%x%x", rand.Int63(), rand.Int63()))
 	tmpFileName := fmt.Sprintf("%v.go", tmpFileBase)
-
-	body, err := ioutil.ReadAll(c.req.Body)
+	tmpFile, err := os.Create(tmpFileName)
 	if err != nil {
 		return err
 	}
+	if err := func() error {
+		defer tmpFile.Close()
 
-	if err := ioutil.WriteFile(tmpFileName, body, 0600); err != nil {
+		if _, err := io.Copy(tmpFile, c.req.Body); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
 		return err
 	}
-	defer os.Remove(tmpFileName)
+	//	defer os.Remove(tmpFileName)
+	log.Printf("### %v", tmpFileName)
 
 	output, err := exec.Command("goimports", "-w", tmpFileName).CombinedOutput()
 	if err != nil {
@@ -162,6 +201,11 @@ func (web *Web) putResource(c *context) error {
 	}
 	if len(output) > 0 {
 		return webErr{status: 400, body: string(output)}
+	}
+
+	body, err := ioutil.ReadFile(tmpFileName)
+	if err != nil {
+		return err
 	}
 
 	if err := validator.Validate(string(body)); err != nil {

@@ -4,20 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"time"
 
 	"github.com/zond/hackyhack/proc/messages"
 )
-
-type Outputter func(string, ...interface{})
-
-func (o Outputter) Trace(f string, i ...interface{}) func() {
-	o(fmt.Sprintf("%s ->", f), i...)
-	start := time.Now()
-	return func() {
-		o(fmt.Sprintf("%s <-\t(%v)", f, time.Now().Sub(start)), i...)
-	}
-}
 
 type Emitter func(*messages.Blob) error
 

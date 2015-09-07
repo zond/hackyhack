@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/zond/hackyhack/logging"
 	"github.com/zond/hackyhack/proc"
 	"github.com/zond/hackyhack/proc/messages"
 )
@@ -43,7 +44,7 @@ type MCP struct {
 	emitLock          sync.Mutex
 	stderrHandler     func([]byte)
 	errHandler        func(error)
-	debugHandler      proc.Outputter
+	debugHandler      logging.Outputter
 	resourceFinder    proc.ResourceFinder
 	stopped           int32
 	count             int64

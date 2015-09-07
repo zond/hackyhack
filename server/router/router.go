@@ -135,11 +135,8 @@ func New(p *persist.Persister) (*Router, error) {
 		return nil, err
 	}
 
-	m, err := r.MCP(messages.VoidResource)
+	_, err := r.MCP(messages.VoidResource)
 	if err != nil {
-		return nil, err
-	}
-	if _, err = m.Construct(messages.VoidResource); err != nil {
 		return nil, err
 	}
 
@@ -228,35 +225,15 @@ func (r *Router) findResource(source, id string) ([]interface{}, error) {
 	return result, nil
 }
 
-func (r *Router) createMCP(res *resource.Resource, oc ownerCode) (*mcp.MCP, error) {
-	m, err := mcp.New(res.Code, r.findResource)
-	if err != nil {
-		return nil, err
-	}
-	if err := m.Start(); err != nil {
-		return nil, err
-	}
-
+func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	existingM, found := r.handlerByOwnerCode[oc]
+	hd, found := r.handlerDataByResource[resourceId]
 	if found {
-		if err := m.Stop(); err != nil {
-			log.Fatal(err)
-		}
-		return existingM, nil
+		return hd.m, nil
 	}
 
-	r.handlerByOwnerCode[oc] = m
-	r.handlerDataByResource[res.Id] = handlerData{
-		oc: oc,
-		m:  m,
-	}
-	return m, nil
-}
-
-func (r *Router) MCP(resourceId string) (*mcp.MCP, error) {
 	res := &resource.Resource{}
 	if err := r.persister.Get(resourceId, res); err != nil {
 		return nil, err
@@ -269,11 +246,43 @@ func (r *Router) MCP(resourceId string) (*mcp.MCP, error) {
 		return nil, err
 	}
 
-	r.lock.RLock()
 	m, found := r.handlerByOwnerCode[oc]
-	r.lock.RUnlock()
-	if !found {
-		return r.createMCP(res, oc)
+	if found {
+		if _, err := m.Construct(res.Id); err != nil {
+			return nil, err
+		}
+		r.handlerDataByResource[res.Id] = handlerData{
+			oc: oc,
+			m:  m,
+		}
+		return m, nil
+	}
+
+	m, err = mcp.New(res.Code, r.findResource)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.Start(); err != nil {
+		return nil, err
+	}
+	if _, err := m.Construct(res.Id); err != nil {
+		return nil, err
+	}
+
+	r.handlerByOwnerCode[oc] = m
+	r.handlerDataByResource[res.Id] = handlerData{
+		oc: oc,
+		m:  m,
 	}
 	return m, nil
+}
+
+func (r *Router) MCP(resourceId string) (*mcp.MCP, error) {
+	r.lock.RLock()
+	hd, found := r.handlerDataByResource[resourceId]
+	r.lock.RUnlock()
+	if !found {
+		return r.createMCP(resourceId)
+	}
+	return hd.m, nil
 }

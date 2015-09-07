@@ -8,7 +8,6 @@ import (
 	"net"
 	"strings"
 
-	"github.com/zond/hackyhack/proc/mcp"
 	"github.com/zond/hackyhack/proc/messages"
 	"github.com/zond/hackyhack/server/lobby"
 	"github.com/zond/hackyhack/server/persist"
@@ -42,14 +41,17 @@ func (c *Client) Send(s string) error {
 }
 
 type mcpHandler struct {
-	m      *mcp.MCP
 	client *Client
 	user   *user.User
 }
 
-func (m *mcpHandler) HandleClientInput(s string) error {
+func (mh *mcpHandler) HandleClientInput(s string) error {
+	m, err := mh.client.router.MCP(mh.user.Resource)
+	if err != nil {
+		return err
+	}
 	var merr *messages.Error
-	if err := m.m.Call(m.user.Resource, m.user.Resource, "HandleClientInput", []string{s}, &[]interface{}{&merr}); err != nil {
+	if err := m.Call(mh.user.Resource, mh.user.Resource, "HandleClientInput", []string{s}, &[]interface{}{&merr}); err != nil {
 		return err
 	}
 	return merr.ToErr()
@@ -71,13 +73,6 @@ func (c *Client) Authorize(user *user.User) error {
 	handler := &mcpHandler{
 		client: c,
 		user:   user,
-	}
-	var err error
-	if handler.m, err = c.router.MCP(user.Resource); err != nil {
-		return err
-	}
-	if _, err = handler.m.Construct(user.Resource); err != nil {
-		return err
 	}
 
 	res := &resource.Resource{}
