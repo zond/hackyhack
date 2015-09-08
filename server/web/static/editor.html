@@ -16,18 +16,54 @@
         bottom: 0;
         left: 0;
         right: 0;
-    }
+		}
+
+		#buttons {
+				position: absolute;
+        top: 0;
+        right: 0;
+		}
   </style>
 </head>
 <body>
 
 <pre id="editor">{{.Resource.Code}}</pre>
 
+<div id="buttons">
+	{{if eq .User.Resource .Resource.Owner }}
+	<button id="save-reboot">Save+Reboot</button>
+	{{end}}
+	<button id="reload">Reload</button>
+</div>
+
 <script src="/static/ace/ace.js" type="text/javascript" charset="utf-8"></script>
+<script src="/static/jquery-2.1.4.min.js" type="text/javascript" charset="utf-8"></script>
 <script>
     var editor = ace.edit("editor");
     editor.setTheme("ace/theme/twilight");
-    editor.getSession().setMode("ace/mode/golang");
+		editor.getSession().setMode("ace/mode/golang");
+
+		$('#reload').on('click', function(ev) {
+			$('button').attr('disabled', 'disabled');
+			$.get('/{{.Resource.Id}}', function(data) {
+				editor.setValue(data);
+				$('button').removeAttr('disabled');
+			});
+		});
+		$('#save-reboot').on('click', function(ev) {
+			$('button').attr('disabled', 'disabled');
+			$.ajax('/{{.Resource.Id}}', {
+				method: 'PUT',
+				data: editor.getValue(),
+				processData: false,
+				success: function() {
+					$('button').removeAttr('disabled');
+				},
+				error: function(http) {
+          alert(http.responseText);
+				},
+			});
+		});
 </script>
 
 </body>

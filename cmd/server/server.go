@@ -61,7 +61,7 @@ fauKTZKIO5xJUx0HYLL1diaGtTT08pvnNW6lnZvaowluNJ2ztNhd
 
 func main() {
 	socketAddr := flag.String("loginAddr", ":6000", "Where to listen for sockets")
-	httpAddr := flag.String("davAddr", ":8080", "Where to listen for http")
+	httpAddr := flag.String("httpAddr", ":8080", "Where to listen for http")
 
 	flag.Parse()
 
