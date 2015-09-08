@@ -41,8 +41,8 @@ func (d *Default) L(what string) *messages.Error {
 	}
 
 	if longDesc != "" {
-		return util.SendToClient(d.M, util.Sprintf("%v\n%v\n\n%v\n", shortDesc, longDesc, util.Enumerate(descs)))
+		return util.SendToClient(d.M, util.Sprintf("%v\n%v\n\n%v\n", util.Capitalize(shortDesc.Articlize()), longDesc, descs.Enumerate()))
 	} else {
-		return util.SendToClient(d.M, util.Sprintf("%v\n\n%v\n", shortDesc, util.Enumerate(descs)))
+		return util.SendToClient(d.M, util.Sprintf("%v\n\n%v\n", util.Capitalize(shortDesc.Articlize()), descs.Enumerate()))
 	}
 }

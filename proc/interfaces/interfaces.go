@@ -3,7 +3,7 @@ package interfaces
 import "github.com/zond/hackyhack/proc/messages"
 
 type Describable interface {
-	GetShortDesc() (string, *messages.Error)
+	GetShortDesc() (*messages.ShortDesc, *messages.Error)
 }
 
 type Destructible interface {

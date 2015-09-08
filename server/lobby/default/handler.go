@@ -44,8 +44,11 @@ func (h *handler) HandleClientInput(s string) *messages.Error {
 	return nil
 }
 
-func (h *handler) GetShortDesc() (string, *messages.Error) {
-	return "{{.Username}}", nil
+func (h *handler) GetShortDesc() (*messages.ShortDesc, *messages.Error) {
+	return &messages.ShortDesc{
+		Value: util.Capitalize("{{.Username}}"),
+		Name:  true,
+	}, nil
 }
 
 func main() {

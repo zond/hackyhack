@@ -18,8 +18,11 @@ func New(m interfaces.MCP) interfaces.Describable {
 	return h
 }
 
-func (h *handler) GetShortDesc() (string, *messages.Error) {
-	return "The Void", nil
+func (h *handler) GetShortDesc() (*messages.ShortDesc, *messages.Error) {
+	return &messages.ShortDesc{
+		Value:  "Void",
+		Unique: true,
+	}, nil
 }
 
 func (h *handler) GetLongDesc() (string, *messages.Error) {

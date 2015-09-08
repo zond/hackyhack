@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
 
-	"github.com/gedex/inflector"
-	"github.com/zond/hackyhack/lang"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/messages"
 )
@@ -22,36 +19,6 @@ func IsNoSuchMethod(err *messages.Error) bool {
 		return false
 	}
 	return err.Code == messages.ErrorCodeNoSuchMethod
-}
-
-func Enumerate(item interface{}) string {
-	val := reflect.ValueOf(item)
-	if val.Kind() == reflect.Slice {
-		descs := map[string]int{}
-		for i := 0; i < val.Len(); i++ {
-			desc := fmt.Sprint(val.Index(i))
-			descs[desc] = descs[desc] + 1
-		}
-		result := []string{}
-		for desc, count := range descs {
-			if count == 1 {
-				result = append(result, fmt.Sprintf("%v %v", lang.Art(desc), desc))
-			} else {
-				result = append(result, fmt.Sprintf("%v %v", count, inflector.Pluralize(desc)))
-			}
-		}
-		buf := &bytes.Buffer{}
-		for i := 0; i < len(result); i++ {
-			fmt.Fprint(buf, result[i])
-			if i < len(result)-2 {
-				fmt.Fprint(buf, ", ")
-			} else if i < len(result)-1 {
-				fmt.Fprint(buf, ", and ")
-			}
-		}
-		return buf.String()
-	}
-	return fmt.Sprintf("%v %v", lang.Art(fmt.Sprint(item)), item)
 }
 
 func GetContainer(m interfaces.MCP, resource string) (string, *messages.Error) {
@@ -81,17 +48,17 @@ func GetLongDesc(m interfaces.MCP, resource string) (string, *messages.Error) {
 	return desc, merr
 }
 
-func GetShortDesc(m interfaces.MCP, resource string) (string, *messages.Error) {
-	var desc string
+func GetShortDesc(m interfaces.MCP, resource string) (*messages.ShortDesc, *messages.Error) {
+	var desc *messages.ShortDesc
 	var merr *messages.Error
 	if err := m.Call(resource, messages.MethodGetShortDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
-		return "", err
+		return nil, err
 	}
 	return desc, merr
 }
 
-func GetShortDescs(m interfaces.MCP, resources []string) ([]string, *messages.Error) {
-	result := make([]string, len(resources))
+func GetShortDescs(m interfaces.MCP, resources []string) (messages.ShortDescs, *messages.Error) {
+	result := make(messages.ShortDescs, len(resources))
 	for index, resource := range resources {
 		shortDesc, err := GetShortDesc(m, resource)
 		if err != nil {
@@ -156,7 +123,7 @@ func GetContentShortDescMap(m interfaces.MCP, resource string) (map[string]strin
 		return nil, err
 	}
 	for index, resource := range content {
-		result[resource] = descs[index]
+		result[resource] = descs[index].Value
 	}
 
 	return result, nil
@@ -177,7 +144,7 @@ func GetShortDescMap(m interfaces.MCP, resource string) (map[string]string, *mes
 	if err != nil {
 		return nil, err
 	}
-	result[container] = containerShortDesc
+	result[container] = containerShortDesc.Value
 
 	containerShortDescMap, err := GetContentShortDescMap(m, container)
 	if err != nil {
