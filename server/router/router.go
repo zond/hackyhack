@@ -226,7 +226,10 @@ func (r *Router) findResource(source, id string) ([]interface{}, error) {
 		return nil, err
 	}
 	result = append(result, proc.ResourceProxy{
-		SendRequest: m.SendRequest,
+		SendRequest: func(req *messages.Request) (*messages.Response, error) {
+			log.Printf("%v does a %v on %v", req.Header.Source, req.Method, req.Resource)
+			return m.SendRequest(req)
+		},
 	})
 
 	return result, nil

@@ -42,6 +42,9 @@ func init() {
 	setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{RLIMIT_NOFILE, RLIMIT_NOFILE})
 	setrlimit(syscall.RLIMIT_STACK, &syscall.Rlimit{RLIMIT_STACK, RLIMIT_STACK})
 	runtime.GOMAXPROCS(1)
+	if err := syscall.Setpriority(syscall.PRIO_PROCESS, 0, 19); err != nil {
+		panic(err)
+	}
 }
 
 var (
