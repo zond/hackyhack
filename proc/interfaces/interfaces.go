@@ -6,11 +6,15 @@ type Describable interface {
 	GetShortDesc() (*messages.ShortDesc, *messages.Error)
 }
 
+type Subscriber interface {
+	Event(*messages.Event) error
+}
+
 type Destructible interface {
 	Destroy()
 }
 
 type MCP interface {
 	GetResource() string
-	Call(resourceId, method string, params, results interface{}) *messages.Error
+	Call(verb *messages.Verb, resourceId, method string, params, results interface{}) *messages.Error
 }

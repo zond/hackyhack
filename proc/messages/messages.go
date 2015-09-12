@@ -3,6 +3,7 @@ package messages
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 
 	"github.com/gedex/inflector"
 	"github.com/zond/hackyhack/lang"
@@ -12,12 +13,19 @@ const (
 	VoidResource = "0"
 )
 
+type EventType int
+
+const (
+	EventTypeRequest EventType = iota
+)
+
 const (
 	MethodGetContainer = "GetContainer"
 	MethodGetContent   = "GetContent"
 	MethodSendToClient = "SendToClient"
 	MethodGetShortDesc = "GetShortDesc"
 	MethodGetLongDesc  = "GetLongDesc"
+	MethodSubscribe    = "Subscribe"
 )
 
 type BlobType int
@@ -43,6 +51,7 @@ const (
 	ErrorCodeProxyFailed
 	ErrorCodeSendToClient
 	ErrorCodeDatabase
+	ErrorCodeRegexp
 )
 
 type Error struct {
@@ -77,13 +86,13 @@ func (sd ShortDescs) Enumerate() string {
 	result := []string{}
 	for desc, count := range nonUniques {
 		if count == 1 {
-			result = append(result, desc.Articlize())
+			result = append(result, desc.IndefArticlize())
 		} else {
 			result = append(result, fmt.Sprintf("%v %v", count, desc.Pluralize()))
 		}
 	}
 	for _, desc := range uniques {
-		result = append(result, desc.Articlize())
+		result = append(result, desc.IndefArticlize())
 	}
 
 	buf := &bytes.Buffer{}
@@ -107,7 +116,14 @@ type ShortDesc struct {
 	Name bool
 }
 
-func (sd *ShortDesc) Articlize() string {
+func (sd *ShortDesc) DefArticlize() string {
+	if sd.Name {
+		return sd.Value
+	}
+	return fmt.Sprintf("the %v", sd.Value)
+}
+
+func (sd *ShortDesc) IndefArticlize() string {
 	if sd.Name {
 		return sd.Value
 	}
@@ -121,9 +137,32 @@ func (sd *ShortDesc) Pluralize() string {
 	return inflector.Pluralize(sd.Value)
 }
 
+type Subscription struct {
+	VerbReg     string
+	MethReg     string
+	HandlerName string
+}
+
+type Event struct {
+	Type     EventType
+	Metadata map[string]string
+	Request  *Request
+}
+
+type Verb struct {
+	SecondPerson string
+	ThirdPerson  string
+	Intransitive bool
+}
+
+func (v *Verb) Matches(r *regexp.Regexp) bool {
+	return r.MatchString(v.SecondPerson) || r.MatchString(v.ThirdPerson)
+}
+
 type RequestHeader struct {
 	Id     string
 	Source string
+	Verb   *Verb
 }
 
 type Request struct {

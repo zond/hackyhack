@@ -9,9 +9,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+	"github.com/zond/hackyhack/logging"
 	"github.com/zond/hackyhack/proc"
 	"github.com/zond/hackyhack/proc/mcp"
 	"github.com/zond/hackyhack/proc/messages"
@@ -34,6 +37,35 @@ func init() {
 type resourceWrapper struct {
 	router   *Router
 	resource string
+}
+
+type subWrapper struct {
+	sub             *messages.Subscription
+	compiledVerbReg *regexp.Regexp
+	compiledMethReg *regexp.Regexp
+}
+
+func (w *resourceWrapper) Subscribe(sub *messages.Subscription) *messages.Error {
+	compiledVerbReg, err := regexp.Compile(sub.VerbReg)
+	if err != nil {
+		return &messages.Error{
+			Message: err.Error(),
+			Code:    messages.ErrorCodeRegexp,
+		}
+	}
+	compiledMethReg, err := regexp.Compile(sub.MethReg)
+	if err != nil {
+		return &messages.Error{
+			Message: err.Error(),
+			Code:    messages.ErrorCodeRegexp,
+		}
+	}
+	w.router.RegisterSubscriber(w.resource, &subWrapper{
+		sub:             sub,
+		compiledVerbReg: compiledVerbReg,
+		compiledMethReg: compiledMethReg,
+	})
+	return nil
 }
 
 func (w *resourceWrapper) GetContainer() (string, *messages.Error) {
@@ -103,8 +135,12 @@ type Router struct {
 	persister             *persist.Persister
 	handlerByOwnerCode    map[ownerCode]*mcp.MCP
 	handlerDataByResource map[string]handlerData
-	lock                  sync.RWMutex
+	handlerLock           sync.RWMutex
+	clientLock            sync.RWMutex
 	clients               map[string]*clientWrapper
+	subscriberLock        sync.RWMutex
+	subscribers           map[string]*subWrapper
+	debugHandler          logging.Outputter
 }
 
 func (r *Router) ensureVoid() error {
@@ -129,6 +165,10 @@ func New(p *persist.Persister) (*Router, error) {
 		handlerByOwnerCode:    map[ownerCode]*mcp.MCP{},
 		handlerDataByResource: map[string]handlerData{},
 		clients:               map[string]*clientWrapper{},
+		subscribers:           map[string]*subWrapper{},
+		debugHandler: func(f string, i ...interface{}) {
+			log.Print(spew.Sprintf(f, i...))
+		},
 	}
 
 	if err := r.ensureVoid(); err != nil {
@@ -143,9 +183,21 @@ func New(p *persist.Persister) (*Router, error) {
 	return r, nil
 }
 
+func (r *Router) RegisterSubscriber(resource string, sub *subWrapper) {
+	r.subscriberLock.Lock()
+	defer r.subscriberLock.Unlock()
+	r.subscribers[resource] = sub
+}
+
+func (r *Router) UnregisterSubscriber(resource string) {
+	r.subscriberLock.Lock()
+	defer r.subscriberLock.Unlock()
+	delete(r.subscribers, resource)
+}
+
 func (r *Router) RegisterClient(resource string, client Client) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.clientLock.Lock()
+	defer r.clientLock.Unlock()
 	r.clients[resource] = &clientWrapper{
 		resourceWrapper: resourceWrapper{
 			resource: resource,
@@ -156,19 +208,19 @@ func (r *Router) RegisterClient(resource string, client Client) {
 }
 
 func (r *Router) UnregisterClient(resource string) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.clientLock.Lock()
+	defer r.clientLock.Unlock()
 	delete(r.clients, resource)
 }
 
 func (r *Router) Restart(resource string) error {
-	r.lock.RLock()
+	r.handlerLock.RLock()
 	hd, found := r.handlerDataByResource[resource]
-	r.lock.RUnlock()
+	r.handlerLock.RUnlock()
 	if found {
-		r.lock.Lock()
+		r.handlerLock.Lock()
 		if err := func() error {
-			defer r.lock.Unlock()
+			defer r.handlerLock.Unlock()
 			hd, found = r.handlerDataByResource[resource]
 			if found {
 				if _, err := hd.m.Destruct(resource); err != nil {
@@ -203,9 +255,9 @@ func (r *Router) findResource(source, id string) ([]interface{}, error) {
 	var result []interface{}
 
 	if id == source {
-		r.lock.RLock()
+		r.clientLock.RLock()
 		client, found := r.clients[id]
-		r.lock.RUnlock()
+		r.clientLock.RUnlock()
 		if found {
 			result = append(result, client)
 		} else {
@@ -227,17 +279,61 @@ func (r *Router) findResource(source, id string) ([]interface{}, error) {
 	}
 	result = append(result, proc.ResourceProxy{
 		SendRequest: func(req *messages.Request) (*messages.Response, error) {
-			log.Printf("%v does a %v on %v", req.Header.Source, req.Method, req.Resource)
-			return m.SendRequest(req)
+			resp, err := m.SendRequest(req)
+			if err == nil {
+				go r.broadcast(req)
+			}
+			return resp, err
 		},
 	})
 
 	return result, nil
 }
 
+func (r *Router) broadcast(req *messages.Request) {
+	defer r.debugHandler.Trace("Router#broadcast(%#v)", req)()
+
+	res := &resource.Resource{}
+	if err := r.persister.Get(req.Header.Source, res); err != nil {
+		r.debugHandler("*** MISSING RESOURCE WHEN BROADCASTING %#v: %v ***", req, err)
+		return
+	}
+	cont := &resource.Resource{}
+	if err := r.persister.Get(res.Container, cont); err != nil {
+		r.debugHandler("*** MISSING CONTAINER WHEN BROADCASTING %#v: %v ***", req, err)
+		return
+	}
+	for _, res := range cont.Content {
+		go func(res string) {
+			r.subscriberLock.RLock()
+			wrapper, found := r.subscribers[res]
+			r.subscriberLock.RUnlock()
+			if found {
+				if req.Header.Verb.Matches(wrapper.compiledVerbReg) || wrapper.compiledMethReg.MatchString(req.Method) {
+					m, err := r.MCP(res)
+					if err != nil {
+						r.debugHandler("*** BROKEN MCP WHEN BROADCASTING: %q ***", res)
+						return
+					}
+					var cont bool
+					if err := m.Call(res, res, wrapper.sub.HandlerName, []interface{}{
+						&messages.Event{
+							Type:    messages.EventTypeRequest,
+							Request: req,
+						},
+					}, &[]interface{}{&cont}); err != nil || !cont {
+						r.debugHandler("Unsubscribing %q (%v, %v)", err, cont)
+						r.UnregisterSubscriber(res)
+					}
+				}
+			}
+		}(res)
+	}
+}
+
 func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.handlerLock.Lock()
+	defer r.handlerLock.Unlock()
 
 	hd, found := r.handlerDataByResource[resourceId]
 	if found {
@@ -288,9 +384,9 @@ func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
 }
 
 func (r *Router) MCP(resourceId string) (*mcp.MCP, error) {
-	r.lock.RLock()
+	r.handlerLock.RLock()
 	hd, found := r.handlerDataByResource[resourceId]
-	r.lock.RUnlock()
+	r.handlerLock.RUnlock()
 	if !found {
 		return r.createMCP(resourceId)
 	}

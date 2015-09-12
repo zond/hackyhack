@@ -43,7 +43,6 @@ type MCP struct {
 	flyingLock        sync.Mutex
 	emitLock          sync.Mutex
 	stderrHandler     func([]byte)
-	errHandler        func(error)
 	debugHandler      logging.Outputter
 	resourceFinder    proc.ResourceFinder
 	stopped           int32
@@ -66,10 +65,7 @@ func New(code string, resourceFinder proc.ResourceFinder) (*MCP, error) {
 			log.Printf("STDERR: %q", b)
 		},
 		debugHandler: func(f string, i ...interface{}) {
-			log.Printf(spew.Sprintf(fmt.Sprintf("%s\n", f), i...))
-		},
-		errHandler: func(err error) {
-			log.Print(err)
+			log.Print(spew.Sprintf(f, i...))
 		},
 		resourceFinder: resourceFinder,
 	}
@@ -166,7 +162,7 @@ func (m *MCP) Construct(resource string) (bool, error) {
 }
 
 func (m *MCP) SendRequest(request *messages.Request) (*messages.Response, error) {
-	request.Header.Id = fmt.Sprint("%v", atomic.AddUint64(&nextRequestId, 1))
+	request.Header.Id = fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1))
 
 	flying := &flyingRequest{
 		resourceId: request.Resource,
@@ -325,8 +321,7 @@ func (m *MCP) startProc() error {
 func (m *MCP) restart(proc *os.Process) {
 	_, err := proc.Wait()
 	if err != nil {
-		m.errHandler(err)
-		return
+		log.Fatal(err)
 	}
 	m.debugHandler("MCP#restart\tchild died")
 
@@ -336,26 +331,18 @@ func (m *MCP) restart(proc *os.Process) {
 
 	time.Sleep(clientRestartTimeout)
 	if err := m.cleanup(); err != nil {
-		m.errHandler(err)
-		return
+		log.Fatal(err)
 	}
 	m.debugHandler("MCP#restart\tchild cleaned")
 
 	if err := m.startProc(); err != nil {
-		m.errHandler(err)
-		return
+		log.Fatal(err)
 	}
 	m.debugHandler("MCP#restart\tchild restarted")
 }
 
 func (m *MCP) handleRequest(request *messages.Request) {
-	defer m.debugHandler.Trace(
-		"MCP#handleRequest by %q for %q.%v(%#v)",
-		request.Header.Source,
-		request.Resource,
-		request.Method,
-		request.Parameters,
-	)()
+	defer m.debugHandler.Trace("MCP#handleRequest(%#v)", request)()
 
 	if err := proc.HandleRequest(func(blob *messages.Blob) error {
 		m.debugHandler("MCP#handleRequest for ... => %#v", blob.Response)
@@ -411,8 +398,10 @@ func (m *MCP) loopStdout(dec *json.Decoder) {
 	for {
 		blob := &messages.Blob{}
 		if err := dec.Decode(blob); err != nil {
-			m.errHandler(fmt.Errorf("Decoding JSON from child STDIN: %v", err))
-			return
+			m.debugHandler("Decoding JSON from child STDIN: %v", err)
+			if err := m.Stop(); err != nil {
+				log.Fatal(err)
+			}
 		}
 		switch blob.Type {
 		case messages.BlobTypeRequest:
@@ -424,8 +413,10 @@ func (m *MCP) loopStdout(dec *json.Decoder) {
 		case messages.BlobTypeDestruct:
 			go m.destructDone(blob.Destruct)
 		default:
-			m.errHandler(fmt.Errorf("Unknown blob type %v", blob.Type))
-			return
+			m.debugHandler("Unknown blob type %v", blob.Type)
+			if err := m.Stop(); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }
@@ -434,9 +425,12 @@ func (m *MCP) loopStderr(r io.ReadCloser) {
 	buf := make([]byte, 1024)
 	for {
 		r, err := r.Read(buf)
-		if err != nil {
-			m.errHandler(fmt.Errorf("Reading from child STDERR: %v", err))
+		if err == io.EOF {
+			m.debugHandler("EOF from STDERR")
 			return
+		} else if err != nil {
+			m.debugHandler("Reading from child STDERR: %v", err)
+			log.Fatal(err)
 		}
 		m.stderrHandler(buf[:r])
 	}

@@ -15,7 +15,9 @@ func (d *Default) Ident(what string) *messages.Error {
 	if err != nil {
 		return err
 	}
-	return util.SendToClient(d.M, util.Sprintf("%+v\n", matches))
+	util.SendToClient(d.M, util.Sprintf("%+v\n", matches))
+
+	return nil
 }
 
 func (d *Default) L(what string) *messages.Error {
@@ -41,8 +43,10 @@ func (d *Default) L(what string) *messages.Error {
 	}
 
 	if longDesc != "" {
-		return util.SendToClient(d.M, util.Sprintf("%v\n%v\n\n%v\n", util.Capitalize(shortDesc.Articlize()), longDesc, descs.Enumerate()))
+		util.SendToClient(d.M, util.Sprintf("%v\n%v\n\n%v\n", util.Capitalize(shortDesc.IndefArticlize()), longDesc, descs.Enumerate()))
 	} else {
-		return util.SendToClient(d.M, util.Sprintf("%v\n\n%v\n", util.Capitalize(shortDesc.Articlize()), descs.Enumerate()))
+		util.SendToClient(d.M, util.Sprintf("%v\n\n%v\n", util.Capitalize(shortDesc.IndefArticlize()), descs.Enumerate()))
 	}
+
+	return nil
 }

@@ -21,19 +21,62 @@ func IsNoSuchMethod(err *messages.Error) bool {
 	return err.Code == messages.ErrorCodeNoSuchMethod
 }
 
+var LookInto = &messages.Verb{
+	SecondPerson: "look into",
+	ThirdPerson:  "looks into",
+}
+
+var LookAt = &messages.Verb{
+	SecondPerson: "look at",
+	ThirdPerson:  "looks at",
+}
+
+var LookAround = &messages.Verb{
+	SecondPerson: "look around",
+	ThirdPerson:  "looks around",
+	Intransitive: true,
+}
+
+var LookUp = &messages.Verb{
+	SecondPerson: "look up",
+	ThirdPerson:  "looks up",
+	Intransitive: true,
+}
+
+var Inspect = &messages.Verb{
+	SecondPerson: "inspect",
+	ThirdPerson:  "inspects",
+}
+
+func Subscribe(m interfaces.MCP, sub *messages.Subscription) *messages.Error {
+	var merr *messages.Error
+	if err := m.Call(nil, m.GetResource(), messages.MethodSubscribe, []interface{}{sub}, &[]interface{}{&merr}); err != nil {
+		return err
+	}
+	return merr
+}
+
 func GetContainer(m interfaces.MCP, resource string) (string, *messages.Error) {
 	var container string
 	var merr *messages.Error
-	if err := m.Call(resource, messages.MethodGetContainer, nil, &[]interface{}{&container, &merr}); err != nil {
+	if err := m.Call(LookUp, resource, messages.MethodGetContainer, nil, &[]interface{}{&container, &merr}); err != nil {
 		return "", err
 	}
 	return container, merr
 }
 
 func GetContent(m interfaces.MCP, resource string) ([]string, *messages.Error) {
+	container, err := GetContainer(m, m.GetResource())
+	if err != nil {
+		return nil, err
+	}
+	verb := LookInto
+	if resource == container {
+		verb = LookAround
+	}
 	var content []string
 	var merr *messages.Error
-	if err := m.Call(resource, messages.MethodGetContent, nil, &[]interface{}{&content, &merr}); err != nil {
+	if err := m.Call(verb, resource, messages.MethodGetContent, nil, &[]interface{}{&content, &merr}); err != nil {
 		return nil, err
 	}
 	return content, merr
@@ -42,7 +85,7 @@ func GetContent(m interfaces.MCP, resource string) ([]string, *messages.Error) {
 func GetLongDesc(m interfaces.MCP, resource string) (string, *messages.Error) {
 	var desc string
 	var merr *messages.Error
-	if err := m.Call(resource, messages.MethodGetLongDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
+	if err := m.Call(Inspect, resource, messages.MethodGetLongDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
 		return "", err
 	}
 	return desc, merr
@@ -51,7 +94,7 @@ func GetLongDesc(m interfaces.MCP, resource string) (string, *messages.Error) {
 func GetShortDesc(m interfaces.MCP, resource string) (*messages.ShortDesc, *messages.Error) {
 	var desc *messages.ShortDesc
 	var merr *messages.Error
-	if err := m.Call(resource, messages.MethodGetShortDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
+	if err := m.Call(LookAt, resource, messages.MethodGetShortDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
 		return nil, err
 	}
 	return desc, merr
@@ -69,12 +112,14 @@ func GetShortDescs(m interfaces.MCP, resources []string) (messages.ShortDescs, *
 	return result, nil
 }
 
-func SendToClient(m interfaces.MCP, msg string) *messages.Error {
+func SendToClient(m interfaces.MCP, msg string) {
 	var merr *messages.Error
-	if err := m.Call(m.GetResource(), messages.MethodSendToClient, []string{msg}, &[]interface{}{&merr}); err != nil {
-		return err
+	if err := m.Call(nil, m.GetResource(), messages.MethodSendToClient, []string{msg}, &[]interface{}{&merr}); err != nil {
+		log.Fatal(err)
 	}
-	return merr
+	if merr != nil {
+		log.Fatal(merr)
+	}
 }
 
 func Fatal(i ...interface{}) {

@@ -58,8 +58,8 @@ type mcp struct {
 	resource string
 }
 
-func (m *mcp) Call(resourceId, method string, params, results interface{}) *messages.Error {
-	return m.driver.emitRequest(m.resource, resourceId, method, params, results)
+func (m *mcp) Call(verb *messages.Verb, resourceId, method string, params, results interface{}) *messages.Error {
+	return m.driver.emitRequest(verb, m.resource, resourceId, method, params, results)
 }
 
 func (m *mcp) GetResource() string {
@@ -122,7 +122,7 @@ func (s *slaveDriver) handleRequest(request *messages.Request) {
 	s.logErr(proc.HandleRequest(s.emit, s.findSlave, request))
 }
 
-func (s *slaveDriver) emitRequest(source, resource, method string, params, result interface{}) *messages.Error {
+func (s *slaveDriver) emitRequest(verb *messages.Verb, source, resource, method string, params, result interface{}) *messages.Error {
 	s.slaveLock.RLock()
 	_, found := s.slaves[source]
 	s.slaveLock.RUnlock()
@@ -137,6 +137,7 @@ func (s *slaveDriver) emitRequest(source, resource, method string, params, resul
 		Header: messages.RequestHeader{
 			Id:     fmt.Sprintf("%X", atomic.AddUint64(&nextRequestId, 1)),
 			Source: source,
+			Verb:   verb,
 		},
 		Resource: resource,
 		Method:   method,
