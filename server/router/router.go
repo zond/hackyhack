@@ -16,6 +16,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/zond/hackyhack/logging"
 	"github.com/zond/hackyhack/proc"
+	"github.com/zond/hackyhack/proc/errors"
 	"github.com/zond/hackyhack/proc/mcp"
 	"github.com/zond/hackyhack/proc/messages"
 	"github.com/zond/hackyhack/server/persist"
@@ -278,10 +279,20 @@ func (r *Router) findResource(source, id string) ([]interface{}, error) {
 		}
 	}
 
+	src := &resource.Resource{}
+	if err := r.persister.Get(source, src); err != nil {
+		return nil, err
+	}
+
 	res := &resource.Resource{}
 	if err := r.persister.Get(id, res); err != nil {
 		return nil, err
 	}
+
+	if src.Container != res.Id && res.Container != src.Id && src.Container != res.Container {
+		return nil, errors.ErrUnavailableResource
+	}
+
 	m, err := r.MCP(res.Id)
 	if err != nil {
 		return nil, err

@@ -13,6 +13,10 @@ const (
 	VoidResource = "0"
 )
 
+type Context struct {
+	Request *Request
+}
+
 type EventType int
 
 const (

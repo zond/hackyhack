@@ -8,6 +8,8 @@ import (
 	"github.com/zond/hackyhack/proc/messages"
 )
 
+var contextType = reflect.TypeOf(&messages.Context{})
+
 type Emitter func(*messages.Blob) error
 
 func (e Emitter) Error(request *messages.Request, err *messages.Error) error {
@@ -75,16 +77,32 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 				}
 
 				mt := m.Type()
-				params := make([]interface{}, mt.NumIn())
-				paramVals := make([]reflect.Value, len(params))
+				paramVals := []reflect.Value{}
 
-				if len(params) > 0 {
+				wantedParams := mt.NumIn()
+				indexOffset := 0
+				if mt.NumIn() > 0 && mt.In(0) == contextType {
+					indexOffset = 1
+					wantedParams--
+				}
+
+				if wantedParams > 0 {
+					params := []interface{}{}
 					if err := json.Unmarshal([]byte(request.Parameters), &params); err != nil {
 						return emitter.Error(request, &messages.Error{
 							Message: fmt.Sprintf("json.Unmarshal of parameters failed: %v", err),
 							Code:    messages.ErrorCodeJSONDecodeParameters,
 						})
 					}
+
+					if wantedParams != len(params) {
+						return emitter.Error(request, &messages.Error{
+							Message: fmt.Sprintf("Wrong number of parameters; got %v, want %v", len(params), mt.NumIn()),
+							Code:    messages.ErrorCodeMethodMismatch,
+						})
+					}
+
+					paramVals = make([]reflect.Value, wantedParams)
 
 					for index := range params {
 						rawJSON, err := json.Marshal(params[index])
@@ -95,7 +113,7 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 							})
 						}
 
-						val := reflect.New(mt.In(index))
+						val := reflect.New(mt.In(index + indexOffset))
 						if err := json.Unmarshal(rawJSON, val.Interface()); err != nil {
 							emitter.Error(request, &messages.Error{
 								Message: fmt.Sprintf("json.Unmarshal of parameter %v failed: %v", index, err),
@@ -104,6 +122,12 @@ func HandleRequest(emitter Emitter, resourceFinder ResourceFinder, request *mess
 						}
 						paramVals[index] = val.Elem()
 					}
+				}
+
+				if mt.NumIn() > 0 && mt.In(0) == contextType {
+					paramVals = append([]reflect.Value{reflect.ValueOf(&messages.Context{
+						Request: request,
+					})}, paramVals...)
 				}
 
 				resultVals := m.Call(paramVals)

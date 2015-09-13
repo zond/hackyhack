@@ -31,7 +31,10 @@ func New(m interfaces.MCP) interfaces.Describable {
 	return h
 }
 
-func (h *handler) Event(ev *messages.Event) bool {
+func (h *handler) Event(ctx *messages.Context, ev *messages.Event) bool {
+	if ctx.Request.Header.Source != h.mcp.GetResource() {
+		return true
+	}
 	if ev.Type == messages.EventTypeRequest {
 		if util.DefaultAttentionLevels.Ignored(h.mcp, ev) {
 			return true
