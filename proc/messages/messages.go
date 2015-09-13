@@ -138,9 +138,10 @@ func (sd *ShortDesc) Pluralize() string {
 }
 
 type Subscription struct {
-	VerbReg     string
-	MethReg     string
-	HandlerName string
+	VerbReg      string
+	MethReg      string
+	EventTypeReg string
+	HandlerName  string
 }
 
 type Event struct {

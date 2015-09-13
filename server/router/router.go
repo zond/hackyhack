@@ -40,9 +40,10 @@ type resourceWrapper struct {
 }
 
 type subWrapper struct {
-	sub             *messages.Subscription
-	compiledVerbReg *regexp.Regexp
-	compiledMethReg *regexp.Regexp
+	sub                  *messages.Subscription
+	compiledVerbReg      *regexp.Regexp
+	compiledMethReg      *regexp.Regexp
+	compiledEventTypeReg *regexp.Regexp
 }
 
 func (w *resourceWrapper) Subscribe(sub *messages.Subscription) *messages.Error {
@@ -60,10 +61,18 @@ func (w *resourceWrapper) Subscribe(sub *messages.Subscription) *messages.Error 
 			Code:    messages.ErrorCodeRegexp,
 		}
 	}
+	compiledEventTypeReg, err := regexp.Compile(sub.EventTypeReg)
+	if err != nil {
+		return &messages.Error{
+			Message: err.Error(),
+			Code:    messages.ErrorCodeRegexp,
+		}
+	}
 	w.router.RegisterSubscriber(w.resource, &subWrapper{
-		sub:             sub,
-		compiledVerbReg: compiledVerbReg,
-		compiledMethReg: compiledMethReg,
+		sub:                  sub,
+		compiledVerbReg:      compiledVerbReg,
+		compiledMethReg:      compiledMethReg,
+		compiledEventTypeReg: compiledEventTypeReg,
 	})
 	return nil
 }
@@ -281,7 +290,7 @@ func (r *Router) findResource(source, id string) ([]interface{}, error) {
 		SendRequest: func(req *messages.Request) (*messages.Response, error) {
 			resp, err := m.SendRequest(req)
 			if err == nil {
-				go r.broadcast(req)
+				go r.broadcastRequest(req)
 			}
 			return resp, err
 		},
@@ -290,26 +299,28 @@ func (r *Router) findResource(source, id string) ([]interface{}, error) {
 	return result, nil
 }
 
-func (r *Router) broadcast(req *messages.Request) {
-	defer r.debugHandler.Trace("Router#broadcast(%#v)", req)()
+func (r *Router) Broadcast(container string, event *messages.Event) {
+	defer r.debugHandler.Trace("Router#Broadcast(%q, %#v)", container, event)()
 
-	res := &resource.Resource{}
-	if err := r.persister.Get(req.Header.Source, res); err != nil {
-		r.debugHandler("*** MISSING RESOURCE WHEN BROADCASTING %#v: %v ***", req, err)
-		return
-	}
 	cont := &resource.Resource{}
-	if err := r.persister.Get(res.Container, cont); err != nil {
-		r.debugHandler("*** MISSING CONTAINER WHEN BROADCASTING %#v: %v ***", req, err)
+	if err := r.persister.Get(container, cont); err != nil {
+		r.debugHandler("*** MISSING CONTAINER WHEN BROADCASTING %#v in %q: %v ***", event, container, err)
 		return
 	}
+
 	for _, res := range cont.Content {
 		go func(res string) {
 			r.subscriberLock.RLock()
 			wrapper, found := r.subscribers[res]
 			r.subscriberLock.RUnlock()
 			if found {
-				if req.Header.Verb.Matches(wrapper.compiledVerbReg) || wrapper.compiledMethReg.MatchString(req.Method) {
+				matches := false
+				if event.Type == messages.EventTypeRequest {
+					matches = event.Request.Header.Verb.Matches(wrapper.compiledVerbReg) || wrapper.compiledMethReg.MatchString(event.Request.Method) || wrapper.compiledEventTypeReg.MatchString(string(event.Type))
+				} else {
+					matches = wrapper.compiledEventTypeReg.MatchString(string(event.Type))
+				}
+				if matches {
 					m, err := r.MCP(res)
 					if err != nil {
 						r.debugHandler("*** BROKEN MCP WHEN BROADCASTING: %q ***", res)
@@ -317,10 +328,7 @@ func (r *Router) broadcast(req *messages.Request) {
 					}
 					var cont bool
 					if err := m.Call(res, res, wrapper.sub.HandlerName, []interface{}{
-						&messages.Event{
-							Type:    messages.EventTypeRequest,
-							Request: req,
-						},
+						event,
 					}, &[]interface{}{&cont}); err != nil || !cont {
 						r.debugHandler("Unsubscribing %q (%v, %v)", err, cont)
 						r.UnregisterSubscriber(res)
@@ -329,6 +337,19 @@ func (r *Router) broadcast(req *messages.Request) {
 			}
 		}(res)
 	}
+}
+
+func (r *Router) broadcastRequest(req *messages.Request) {
+	res := &resource.Resource{}
+	if err := r.persister.Get(req.Header.Source, res); err != nil {
+		r.debugHandler("*** MISSING RESOURCE WHEN BROADCASTING %#v: %v ***", req, err)
+		return
+	}
+
+	r.Broadcast(res.Container, &messages.Event{
+		Type:    messages.EventTypeRequest,
+		Request: req,
+	})
 }
 
 func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
