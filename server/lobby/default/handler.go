@@ -33,28 +33,37 @@ func New(m interfaces.MCP) interfaces.Describable {
 
 func (h *handler) Event(ev *messages.Event) bool {
 	if ev.Type == messages.EventTypeRequest {
+		if util.DefaultAttentionLevels.Ignored(h.mcp, ev) {
+			return true
+		}
+		subject := "something"
+		verb := ""
 		if ev.Request.Header.Source == h.mcp.GetResource() {
-			targetDesc, err := util.GetShortDesc(h.mcp, ev.Request.Resource)
-			if err != nil {
-				util.SendToClient(h.mcp, util.Sprintf("You %v something.", ev.Request.Header.Verb.SecondPerson))
+			verb = ev.Request.Header.Verb.SecondPerson
+			subject = "you"
+		} else {
+			verb = ev.Request.Header.Verb.ThirdPerson
+			subjectDesc, serr := util.GetShortDesc(h.mcp, ev.Request.Header.Source)
+			if serr == nil {
+				subject = subjectDesc.DefArticlize()
+			}
+		}
+		object := "something"
+		if ev.Request.Resource == h.mcp.GetResource() {
+			if ev.Request.Header.Source == h.mcp.GetResource() {
+				object = "yourself"
 			} else {
-				util.SendToClient(h.mcp, util.Sprintf("You %v %v.", ev.Request.Header.Verb.SecondPerson, targetDesc.DefArticlize()))
+				object = "you"
 			}
 		} else {
-			source := "something"
-			sourceDesc, serr := util.GetShortDesc(h.mcp, ev.Request.Header.Source)
-			if serr == nil {
-				source = sourceDesc.DefArticlize()
+			objectDesc, err := util.GetShortDesc(h.mcp, ev.Request.Resource)
+			if err == nil {
+				object = objectDesc.DefArticlize()
 			}
-			target := "something"
-			targetDesc, terr := util.GetShortDesc(h.mcp, ev.Request.Resource)
-			if terr == nil {
-				target = targetDesc.DefArticlize()
-			}
-			util.SendToClient(h.mcp, util.Capitalize(util.Sprintf("%v %v %v.", source, ev.Request.Header.Verb.ThirdPerson, target)))
 		}
+		util.SendToClient(h.mcp, util.Capitalize(util.Sprintf("%v %v %v.\n", subject, verb, object)))
 	} else {
-		util.SendToClient(h.mcp, util.Sprintf("%+v", ev))
+		util.SendToClient(h.mcp, util.Sprintf("%+v\n", ev))
 	}
 	return true
 }
@@ -77,6 +86,10 @@ func (h *handler) HandleClientInput(s string) *messages.Error {
 	}
 
 	return nil
+}
+
+func (h *handler) GetLongDesc() (string, *messages.Error) {
+	return "An anonymous blob of logic.", nil
 }
 
 func (h *handler) GetShortDesc() (*messages.ShortDesc, *messages.Error) {

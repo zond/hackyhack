@@ -8,11 +8,94 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/zond/hackyhack/proc/interfaces"
 	"github.com/zond/hackyhack/proc/messages"
 )
+
+type AttentionLevel func(m interfaces.MCP, event *messages.Event) bool
+
+var (
+	AttentionLevelAll = func(m interfaces.MCP, event *messages.Event) bool {
+		return true
+	}
+	AttentionLevelNotContainer = func(m interfaces.MCP, event *messages.Event) bool {
+		container, err := GetContainer(m, m.GetResource())
+		if err != nil {
+			log.Fatal(err)
+		}
+		return container != event.Request.Resource
+	}
+	AttentionLevelMe = func(m interfaces.MCP, event *messages.Event) bool {
+		return event.Request.Resource == m.GetResource()
+	}
+	AttentionLevelNone = func(m interfaces.MCP, event *messages.Event) bool {
+		return false
+	}
+)
+
+type AttentionLevels map[string]AttentionLevel
+
+func (als *AttentionLevels) AddMethod(method string, at AttentionLevel) *AttentionLevels {
+	(*als)[Sprintf("%v.%v", messages.EventTypeRequest, method)] = at
+	return als
+}
+
+func (als AttentionLevels) Ignored(m interfaces.MCP, event *messages.Event) bool {
+	key := ""
+	if event.Type == messages.EventTypeRequest {
+		key = fmt.Sprintf("%v.%v", event.Type, event.Request.Method)
+	} else {
+		key = fmt.Sprintf("%v.-", event.Type, event.Request.Method)
+	}
+	al, found := als[key]
+	if !found {
+		log.Printf("%+v not found", event)
+		return false
+	}
+	return !al(m, event)
+}
+
+var DefaultAttentionLevels = (&AttentionLevels{}).
+	AddMethod(messages.MethodGetShortDesc, AttentionLevelNone).
+	AddMethod(messages.MethodGetContent, AttentionLevelNotContainer).
+	AddMethod(messages.MethodGetLongDesc, AttentionLevelMe)
+
+type sdCache struct {
+	m map[string]*messages.ShortDesc
+	l sync.RWMutex
+}
+
+func newSDCache() *sdCache {
+	return &sdCache{
+		m: map[string]*messages.ShortDesc{},
+	}
+}
+
+func (c *sdCache) get(k string) (v *messages.ShortDesc, f bool) {
+	c.l.RLock()
+	defer c.l.RUnlock()
+	v, f = c.m[k]
+	return
+}
+
+func (c *sdCache) set(k string, v *messages.ShortDesc) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	c.m[k] = v
+	go func() {
+		time.Sleep(time.Second)
+		c.l.Lock()
+		defer c.l.Unlock()
+		delete(c.m, k)
+	}()
+}
+
+var cache = newSDCache()
 
 func IsNoSuchMethod(err *messages.Error) bool {
 	if err == nil {
@@ -29,6 +112,11 @@ var LookInto = &messages.Verb{
 var LookAt = &messages.Verb{
 	SecondPerson: "look at",
 	ThirdPerson:  "looks at",
+}
+
+var GlanceAt = &messages.Verb{
+	SecondPerson: "glance at",
+	ThirdPerson:  "glances at",
 }
 
 var LookAround = &messages.Verb{
@@ -85,19 +173,26 @@ func GetContent(m interfaces.MCP, resource string) ([]string, *messages.Error) {
 func GetLongDesc(m interfaces.MCP, resource string) (string, *messages.Error) {
 	var desc string
 	var merr *messages.Error
-	if err := m.Call(Inspect, resource, messages.MethodGetLongDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
+	if err := m.Call(LookAt, resource, messages.MethodGetLongDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
 		return "", err
 	}
 	return desc, merr
 }
 
 func GetShortDesc(m interfaces.MCP, resource string) (*messages.ShortDesc, *messages.Error) {
-	var desc *messages.ShortDesc
+	desc, found := cache.get(resource)
+	if found {
+		return desc, nil
+	}
 	var merr *messages.Error
-	if err := m.Call(LookAt, resource, messages.MethodGetShortDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
+	if err := m.Call(GlanceAt, resource, messages.MethodGetShortDesc, nil, &[]interface{}{&desc, &merr}); err != nil {
 		return nil, err
 	}
-	return desc, merr
+	if merr != nil {
+		return nil, merr
+	}
+	cache.set(resource, desc)
+	return desc, nil
 }
 
 func GetShortDescs(m interfaces.MCP, resources []string) (messages.ShortDescs, *messages.Error) {
@@ -136,6 +231,10 @@ func Log(i ...interface{}) {
 
 func Logf(f string, i ...interface{}) {
 	log.Printf(f, i...)
+}
+
+func Spewf(f string, i ...interface{}) string {
+	return spew.Sprintf(f, i...)
 }
 
 func Sprintf(f string, i ...interface{}) string {
