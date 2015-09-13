@@ -223,20 +223,28 @@ func (r *Router) UnregisterClient(resource string) {
 	delete(r.clients, resource)
 }
 
-func (r *Router) Restart(resource string) error {
+func (r *Router) Decomission(resourceId string) (bool, error) {
 	r.handlerLock.RLock()
-	hd, found := r.handlerDataByResource[resource]
+	hd, found := r.handlerDataByResource[resourceId]
 	r.handlerLock.RUnlock()
 	if found {
 		r.handlerLock.Lock()
 		if err := func() error {
 			defer r.handlerLock.Unlock()
-			hd, found = r.handlerDataByResource[resource]
+			hd, found = r.handlerDataByResource[resourceId]
 			if found {
-				if _, err := hd.m.Destruct(resource); err != nil {
+				res := &resource.Resource{}
+				if err := r.persister.Get(resourceId, res); err != nil {
 					return err
 				}
-				delete(r.handlerDataByResource, resource)
+				if _, err := hd.m.Destruct(resourceId); err != nil {
+					return err
+				}
+				go r.Broadcast(res.Container, &messages.Event{
+					Type:   messages.EventTypeDestruct,
+					Source: resourceId,
+				})
+				delete(r.handlerDataByResource, resourceId)
 				if hd.m.Count() == 0 {
 					if err := hd.m.Stop(); err != nil {
 						return err
@@ -246,16 +254,21 @@ func (r *Router) Restart(resource string) error {
 			}
 			return nil
 		}(); err != nil {
-			return err
+			return false, err
 		}
-		if found {
-			m, err := r.MCP(resource)
-			if err != nil {
-				return err
-			}
-			if _, err := m.Construct(resource); err != nil {
-				return err
-			}
+	}
+	return found, nil
+}
+
+func (r *Router) Restart(resource string) error {
+	found, err := r.Decomission(resource)
+	if err != nil {
+		return err
+	}
+	if found {
+		_, err := r.MCP(resource)
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -327,7 +340,10 @@ func (r *Router) Broadcast(container string, event *messages.Event) {
 			if found {
 				matches := false
 				if event.Type == messages.EventTypeRequest {
-					matches = event.Request.Header.Verb.Matches(wrapper.compiledVerbReg) || wrapper.compiledMethReg.MatchString(event.Request.Method) || wrapper.compiledEventTypeReg.MatchString(string(event.Type))
+					matches =
+						event.Request.Header.Verb.Matches(wrapper.compiledVerbReg) ||
+							wrapper.compiledMethReg.MatchString(event.Request.Method) ||
+							wrapper.compiledEventTypeReg.MatchString(string(event.Type))
 				} else {
 					matches = wrapper.compiledEventTypeReg.MatchString(string(event.Type))
 				}
@@ -358,6 +374,7 @@ func (r *Router) broadcastRequest(req *messages.Request) {
 	}
 
 	r.Broadcast(res.Container, &messages.Event{
+		Source:  req.Header.Source,
 		Type:    messages.EventTypeRequest,
 		Request: req,
 	})
@@ -386,7 +403,7 @@ func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
 
 	m, found := r.handlerByOwnerCode[oc]
 	if found {
-		if _, err := m.Construct(res.Id); err != nil {
+		if err := r.construct(m, res); err != nil {
 			return nil, err
 		}
 		r.handlerDataByResource[res.Id] = handlerData{
@@ -403,7 +420,7 @@ func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
 	if err := m.Start(); err != nil {
 		return nil, err
 	}
-	if _, err := m.Construct(res.Id); err != nil {
+	if err := r.construct(m, res); err != nil {
 		return nil, err
 	}
 
@@ -413,6 +430,19 @@ func (r *Router) createMCP(resourceId string) (*mcp.MCP, error) {
 		m:  m,
 	}
 	return m, nil
+}
+
+func (r *Router) construct(m *mcp.MCP, res *resource.Resource) error {
+	if _, err := m.Construct(res.Id); err != nil {
+		return err
+	}
+	if res.Container != "" {
+		go r.Broadcast(res.Container, &messages.Event{
+			Type:   messages.EventTypeConstruct,
+			Source: res.Id,
+		})
+	}
+	return nil
 }
 
 func (r *Router) MCP(resourceId string) (*mcp.MCP, error) {

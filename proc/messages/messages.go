@@ -21,6 +21,8 @@ type EventType int
 
 const (
 	EventTypeRequest EventType = iota
+	EventTypeConstruct
+	EventTypeDestruct
 )
 
 const (
@@ -150,6 +152,7 @@ type Subscription struct {
 
 type Event struct {
 	Type     EventType
+	Source   string
 	Metadata map[string]string
 	Request  *Request
 }

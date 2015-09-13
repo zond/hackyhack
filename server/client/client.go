@@ -62,11 +62,15 @@ func (m *mcpHandler) UnregisterClient() {
 	if err := m.client.persister.Get(m.user.Resource, res); err != nil {
 		log.Print(err)
 	} else {
+		m.client.router.UnregisterSubscriber(m.user.Resource)
+		m.client.router.UnregisterClient(m.user.Resource)
+		if _, err := m.client.router.Decomission(m.user.Resource); err != nil {
+			log.Print(err)
+		}
 		if err := res.Remove(m.client.persister); err != nil {
 			log.Print(err)
 		}
 	}
-	m.client.router.UnregisterClient(m.user.Resource)
 }
 
 func (c *Client) Authorize(user *user.User) error {
@@ -84,6 +88,9 @@ func (c *Client) Authorize(user *user.User) error {
 	}
 
 	c.handler = handler
+	if _, err := c.router.MCP(user.Resource); err != nil {
+		return err
+	}
 	c.router.RegisterClient(user.Resource, c)
 	return nil
 }

@@ -397,7 +397,11 @@ func (m *MCP) destructDone(d *messages.Deconstruct) {
 func (m *MCP) loopStdout(dec *json.Decoder) {
 	for {
 		blob := &messages.Blob{}
-		if err := dec.Decode(blob); err != nil {
+		err := dec.Decode(blob)
+		if err == io.EOF {
+			m.debugHandler("EOF from STDIN")
+			return
+		} else if err != nil {
 			m.debugHandler("Decoding JSON from child STDIN: %v", err)
 			if err := m.Stop(); err != nil {
 				log.Fatal(err)

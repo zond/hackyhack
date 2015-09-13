@@ -35,7 +35,22 @@ func (h *handler) Event(ctx *messages.Context, ev *messages.Event) bool {
 	if ctx.Request.Header.Source != h.mcp.GetResource() {
 		return true
 	}
-	if ev.Type == messages.EventTypeRequest {
+	switch ev.Type {
+	case messages.EventTypeDestruct:
+		object := "something"
+		objectDesc, err := util.GetShortDesc(h.mcp, ev.Source)
+		if err == nil {
+			object = objectDesc.IndefArticlize()
+		}
+		util.SendToClient(h.mcp, util.Capitalize(util.Sprintf("%v disappears.\n", object)))
+	case messages.EventTypeConstruct:
+		object := "something"
+		objectDesc, err := util.GetShortDesc(h.mcp, ev.Source)
+		if err == nil {
+			object = objectDesc.IndefArticlize()
+		}
+		util.SendToClient(h.mcp, util.Capitalize(util.Sprintf("%v appears.\n", object)))
+	case messages.EventTypeRequest:
 		if util.DefaultAttentionLevels.Ignored(h.mcp, ev) {
 			return true
 		}
@@ -65,7 +80,7 @@ func (h *handler) Event(ctx *messages.Context, ev *messages.Event) bool {
 			}
 		}
 		util.SendToClient(h.mcp, util.Capitalize(util.Sprintf("%v %v %v.\n", subject, verb, object)))
-	} else {
+	default:
 		util.SendToClient(h.mcp, util.Sprintf("%+v\n", ev))
 	}
 	return true
