@@ -17,6 +17,7 @@ var allowedImports = map[string]bool{
 	"\"regexp\"":  true,
 	"\"strconv\"": true,
 	"\"bytes\"":   true,
+	"\"github.com/zond/hackyhack/client/events\"":        true,
 	"\"github.com/zond/hackyhack/client/commands\"":      true,
 	"\"github.com/zond/hackyhack/client/util\"":          true,
 	"\"github.com/zond/hackyhack/proc/interfaces\"":      true,

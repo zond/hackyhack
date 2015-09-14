@@ -10,6 +10,15 @@ type Default struct {
 	M interfaces.MCP
 }
 
+func (d *Default) Say(what string) *messages.Error {
+	return util.EmitEvent(d.M, &messages.Event{
+		Type: messages.EventTypeSay,
+		Metadata: map[string]string{
+			messages.MetadataPayload: what,
+		},
+	})
+}
+
 func (d *Default) Ident(what string) *messages.Error {
 	matches, err := util.Identify(d.M, what)
 	if err != nil {

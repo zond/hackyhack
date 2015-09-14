@@ -23,6 +23,11 @@ const (
 	EventTypeRequest EventType = iota
 	EventTypeConstruct
 	EventTypeDestruct
+	EventTypeSay
+)
+
+const (
+	MetadataPayload = "Payload"
 )
 
 const (
@@ -32,6 +37,7 @@ const (
 	MethodGetShortDesc = "GetShortDesc"
 	MethodGetLongDesc  = "GetLongDesc"
 	MethodSubscribe    = "Subscribe"
+	MethodEmitEvent    = "EmitEvent"
 )
 
 type BlobType int
@@ -58,6 +64,7 @@ const (
 	ErrorCodeSendToClient
 	ErrorCodeDatabase
 	ErrorCodeRegexp
+	ErrorCodeEventType
 )
 
 type Error struct {

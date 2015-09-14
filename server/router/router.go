@@ -100,6 +100,27 @@ func (w *resourceWrapper) GetContent() ([]string, *messages.Error) {
 	return res.Content, nil
 }
 
+func (w *resourceWrapper) EmitEvent(ev *messages.Event) *messages.Error {
+	if ev.Type == messages.EventTypeRequest {
+		return &messages.Error{
+			Message: "Can't emit Request events.",
+			Code:    messages.ErrorCodeEventType,
+		}
+	}
+	ev.Request = nil
+	ev.Source = w.resource
+	ev.SourceShortDesc = nil
+	res := &resource.Resource{}
+	if err := w.router.persister.Get(w.resource, res); err != nil {
+		return &messages.Error{
+			Message: "Can't find emitting resource.",
+			Code:    messages.ErrorCodeNoSuchResource,
+		}
+	}
+	go w.router.Broadcast(res.Container, ev)
+	return nil
+}
+
 type Client interface {
 	Send(string) error
 }

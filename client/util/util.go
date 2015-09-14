@@ -104,36 +104,45 @@ func IsNoSuchMethod(err *messages.Error) bool {
 	return err.Code == messages.ErrorCodeNoSuchMethod
 }
 
-var LookInto = &messages.Verb{
-	SecondPerson: "look into",
-	ThirdPerson:  "looks into",
-}
+var (
+	Say = &messages.Verb{
+		SecondPerson: "say",
+		ThirdPerson:  "says",
+	}
+	LookInto = &messages.Verb{
+		SecondPerson: "look into",
+		ThirdPerson:  "looks into",
+	}
+	LookAt = &messages.Verb{
+		SecondPerson: "look at",
+		ThirdPerson:  "looks at",
+	}
+	GlanceAt = &messages.Verb{
+		SecondPerson: "glance at",
+		ThirdPerson:  "glances at",
+	}
+	LookAround = &messages.Verb{
+		SecondPerson: "look around",
+		ThirdPerson:  "looks around",
+		Intransitive: true,
+	}
+	LookUp = &messages.Verb{
+		SecondPerson: "look up",
+		ThirdPerson:  "looks up",
+		Intransitive: true,
+	}
+	Inspect = &messages.Verb{
+		SecondPerson: "inspect",
+		ThirdPerson:  "inspects",
+	}
+)
 
-var LookAt = &messages.Verb{
-	SecondPerson: "look at",
-	ThirdPerson:  "looks at",
-}
-
-var GlanceAt = &messages.Verb{
-	SecondPerson: "glance at",
-	ThirdPerson:  "glances at",
-}
-
-var LookAround = &messages.Verb{
-	SecondPerson: "look around",
-	ThirdPerson:  "looks around",
-	Intransitive: true,
-}
-
-var LookUp = &messages.Verb{
-	SecondPerson: "look up",
-	ThirdPerson:  "looks up",
-	Intransitive: true,
-}
-
-var Inspect = &messages.Verb{
-	SecondPerson: "inspect",
-	ThirdPerson:  "inspects",
+func EmitEvent(m interfaces.MCP, ev *messages.Event) *messages.Error {
+	var merr *messages.Error
+	if err := m.Call(nil, m.GetResource(), messages.MethodEmitEvent, []interface{}{ev}, &[]interface{}{&merr}); err != nil {
+		return err
+	}
+	return merr
 }
 
 func Subscribe(m interfaces.MCP, sub *messages.Subscription) *messages.Error {
