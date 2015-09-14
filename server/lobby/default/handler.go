@@ -37,12 +37,7 @@ func (h *handler) Event(ctx *messages.Context, ev *messages.Event) bool {
 	}
 	switch ev.Type {
 	case messages.EventTypeDestruct:
-		object := "something"
-		objectDesc, err := util.GetShortDesc(h.mcp, ev.Source)
-		if err == nil {
-			object = objectDesc.IndefArticlize()
-		}
-		util.SendToClient(h.mcp, util.Capitalize(util.Sprintf("%v disappears.\n", object)))
+		util.SendToClient(h.mcp, util.Capitalize(util.Sprintf("%v disappears.\n", ev.SourceShortDesc.IndefArticlize())))
 	case messages.EventTypeConstruct:
 		object := "something"
 		objectDesc, err := util.GetShortDesc(h.mcp, ev.Source)

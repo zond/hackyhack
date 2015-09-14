@@ -228,6 +228,18 @@ func (r *Router) Decomission(resourceId string) (bool, error) {
 	hd, found := r.handlerDataByResource[resourceId]
 	r.handlerLock.RUnlock()
 	if found {
+		m, err := r.MCP(resourceId)
+		if err != nil {
+			return false, err
+		}
+		var sd *messages.ShortDesc
+		var merr *messages.Error
+		if err := m.Call(resourceId, resourceId, messages.MethodGetShortDesc, nil, &[]interface{}{&sd, &merr}); err != nil {
+			return false, err
+		}
+		if merr != nil {
+			return false, merr.ToErr()
+		}
 		r.handlerLock.Lock()
 		if err := func() error {
 			defer r.handlerLock.Unlock()
@@ -241,8 +253,9 @@ func (r *Router) Decomission(resourceId string) (bool, error) {
 					return err
 				}
 				go r.Broadcast(res.Container, &messages.Event{
-					Type:   messages.EventTypeDestruct,
-					Source: resourceId,
+					Type:            messages.EventTypeDestruct,
+					Source:          resourceId,
+					SourceShortDesc: sd,
 				})
 				delete(r.handlerDataByResource, resourceId)
 				if hd.m.Count() == 0 {

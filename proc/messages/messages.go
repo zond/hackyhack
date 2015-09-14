@@ -151,10 +151,11 @@ type Subscription struct {
 }
 
 type Event struct {
-	Type     EventType
-	Source   string
-	Metadata map[string]string
-	Request  *Request
+	Type            EventType
+	Source          string
+	SourceShortDesc *ShortDesc
+	Metadata        map[string]string
+	Request         *Request
 }
 
 type Verb struct {
